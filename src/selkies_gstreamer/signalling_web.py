@@ -233,8 +233,18 @@ class WebRTCSimpleServer(object):
                 response_headers['Content-Type'] = 'application/json'
                 return self.http_response(http.HTTPStatus.OK, response_headers, data)
             else:
-                web_logger.warning("HTTP GET {} 404 NOT FOUND - Missing RTC config".format(path))
-                return self.http_response(http.HTTPStatus.NOT_FOUND, response_headers, b'404 NOT FOUND')
+                # Return minimal STUN-only configuration instead of 404
+                web_logger.info("HTTP GET {} - No TURN configured, returning STUN-only config".format(path))
+                minimal_rtc_config = json.dumps({
+                    "lifetimeDuration": "86400s",
+                    "iceServers": [
+                        {
+                            "urls": ["stun:{}:{}".format(self.stun_host, self.stun_port)]
+                        }
+                    ]
+                })
+                response_headers['Content-Type'] = 'application/json'
+                return self.http_response(http.HTTPStatus.OK, response_headers, str.encode(minimal_rtc_config))
 
         path = path.split("?")[0]
         if path == '/':
