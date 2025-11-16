@@ -605,20 +605,15 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
     const handleFocus = () => {
       if (webrtcRef.current) {
         webrtcRef.current.sendDataChannelMessage("kr");
-        // Проверяем доступность clipboard API
-        if (navigator.clipboard && navigator.clipboard.readText) {
-          navigator.clipboard.readText()
-            .then(text => {
-              if (webrtcRef.current) {
-                webrtcRef.current.sendDataChannelMessage("cw," + stringToBase64(text));
-              }
-            })
-            .catch(err => {
-              console.error('Failed to read clipboard contents: ' + err);
-            });
-        } else {
-          console.warn('Clipboard API not available (requires HTTPS or localhost)');
-        }
+        navigator.clipboard.readText()
+          .then(text => {
+            if (webrtcRef.current) {
+              webrtcRef.current.sendDataChannelMessage("cw," + stringToBase64(text));
+            }
+          })
+          .catch(err => {
+            console.error('Failed to read clipboard contents: ' + err);
+          });
       }
     };
 
@@ -714,24 +709,16 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   };
 
   const handleEnableClipboard = () => {
-    // Проверяем доступность clipboard API
-    if (navigator.clipboard && navigator.clipboard.readText) {
-      navigator.clipboard.readText()
-        .then(text => {
-          if (webrtcRef.current) {
-            webrtcRef.current.sendDataChannelMessage("cr");
-            setClipboardStatus('enabled');
-            console.log('Clipboard enabled');
-          }
-        })
-        .catch(err => {
-          console.error('Failed to read clipboard contents: ' + err);
-          alert('Clipboard API requires HTTPS or localhost. Current: ' + window.location.protocol);
-        });
-    } else {
-      console.error('Clipboard API not available');
-      alert('Clipboard API not available. Please use HTTPS or localhost.');
-    }
+    navigator.clipboard.readText()
+      .then(text => {
+        if (webrtcRef.current) {
+          webrtcRef.current.setCallbacks({ onstatus: (msg) => console.log(msg) });
+          webrtcRef.current.sendDataChannelMessage("cr");
+        }
+      })
+      .catch(err => {
+        console.error('Failed to read clipboard contents: ' + err);
+      });
   };
 
   // Эффекты для синхронизации настроек
