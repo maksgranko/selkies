@@ -168,6 +168,9 @@ export class WebRTCDemo {
       this.setDebug("received SDP offer, creating answer");
       this.peerConnection!.createAnswer()
         .then((local_sdp) => {
+          if (!local_sdp.sdp) {
+            throw new Error("SDP is undefined");
+          }
           // Устанавливаем sps-pps-idr-in-keyframe=1
           if (!(/[^-]sps-pps-idr-in-keyframe=1[^\d]/gm.test(local_sdp.sdp)) && (/[^-]packetization-mode=/gm.test(local_sdp.sdp))) {
             console.log("Overriding WebRTC SDP to include sps-pps-idr-in-keyframe=1");
@@ -214,7 +217,7 @@ export class WebRTCDemo {
   private onTrack = (event: RTCTrackEvent): void => {
     this.setStatus(`Received incoming ${event.track.kind} stream from peer`);
     if (!this.streams) this.streams = [];
-    this.streams.push([event.track.kind, event.streams]);
+    this.streams.push([event.track.kind, Array.from(event.streams)]);
     if (event.track.kind === "video" || event.track.kind === "audio") {
       this.element.srcObject = event.streams[0];
       this.playStream();

@@ -62,10 +62,10 @@ class SimpleKeyboard {
       }
     };
 
-    this.element.addEventListener('keydown', keydownHandler);
-    this.element.addEventListener('keyup', keyupHandler);
-    this.listeners.push([this.element, 'keydown', keydownHandler]);
-    this.listeners.push([this.element, 'keyup', keyupHandler]);
+    this.element.addEventListener('keydown', keydownHandler as EventListener);
+    this.element.addEventListener('keyup', keyupHandler as EventListener);
+    this.listeners.push([this.element, 'keydown', keydownHandler as EventListener]);
+    this.listeners.push([this.element, 'keyup', keyupHandler as EventListener]);
   }
 
   private getKeysym(e: KeyboardEvent): number | null {
@@ -189,11 +189,12 @@ export class Input {
   /**
    * Обрабатывает события кнопок мыши и движения
    */
-  private mouseButtonMovement = (event: MouseEvent): void => {
-    const down = (event.type === 'mousedown' ? 1 : 0);
+  private mouseButtonMovement = (event: Event): void => {
+    const mouseEvent = event as MouseEvent;
+    const down = (mouseEvent.type === 'mousedown' ? 1 : 0);
     let mtype = "m";
 
-    if (event.type === 'mousemove' && !this.m) return;
+    if (mouseEvent.type === 'mousemove' && !this.m) return;
 
     if (!document.pointerLockElement) {
       if (this.mouseRelative) {
@@ -210,7 +211,7 @@ export class Input {
     }
 
     // Горячая клавиша для включения pointer lock, Ctrl-Shift-LeftClick
-    if (down && event.button === 0 && event.ctrlKey && event.shiftKey) {
+    if (down && mouseEvent.button === 0 && mouseEvent.ctrlKey && mouseEvent.shiftKey) {
       this.element.requestPointerLock().then(
         () => {
           console.log("pointer lock success");
@@ -226,19 +227,19 @@ export class Input {
     if (document.pointerLockElement) {
       mtype = "m2";
       if (this.cursorScaleFactor != null) {
-        this.x = Math.trunc(event.movementX * this.cursorScaleFactor);
-        this.y = Math.trunc(event.movementY * this.cursorScaleFactor);
+        this.x = Math.trunc(mouseEvent.movementX * this.cursorScaleFactor);
+        this.y = Math.trunc(mouseEvent.movementY * this.cursorScaleFactor);
       } else {
-        this.x = event.movementX;
-        this.y = event.movementY;
+        this.x = mouseEvent.movementX;
+        this.y = mouseEvent.movementY;
       }
-    } else if (event.type === 'mousemove') {
-      this.x = this.clientToServerX(event.clientX);
-      this.y = this.clientToServerY(event.clientY);
+    } else if (mouseEvent.type === 'mousemove') {
+      this.x = this.clientToServerX(mouseEvent.clientX);
+      this.y = this.clientToServerY(mouseEvent.clientY);
     }
 
-    if (event.type === 'mousedown' || event.type === 'mouseup') {
-      const mask = 1 << event.button;
+    if (mouseEvent.type === 'mousedown' || mouseEvent.type === 'mouseup') {
+      const mask = 1 << mouseEvent.button;
       if (down) {
         this.buttonMask |= mask;
       } else {
@@ -255,26 +256,27 @@ export class Input {
     ];
 
     this.send(toks.join(","));
-    event.preventDefault();
+    mouseEvent.preventDefault();
   };
 
   /**
    * Обрабатывает touch события
    */
-  private touch = (event: TouchEvent): void => {
+  private touch = (event: Event): void => {
+    const touchEvent = event as TouchEvent;
     const mtype = "m";
     const mask = 1;
 
-    if (event.type === 'touchstart') {
+    if (touchEvent.type === 'touchstart') {
       this.buttonMask |= mask;
-    } else if (event.type === 'touchend') {
+    } else if (touchEvent.type === 'touchend') {
       this.buttonMask &= ~mask;
-    } else if (event.type === 'touchmove') {
-      event.preventDefault();
+    } else if (touchEvent.type === 'touchmove') {
+      touchEvent.preventDefault();
     }
 
-    this.x = this.clientToServerX(event.changedTouches[0].clientX);
-    this.y = this.clientToServerY(event.changedTouches[0].clientY);
+    this.x = this.clientToServerX(touchEvent.changedTouches[0].clientX);
+    this.y = this.clientToServerY(touchEvent.changedTouches[0].clientY);
 
     const toks = [
       mtype,
@@ -306,8 +308,9 @@ export class Input {
   /**
    * Обертка для _mouseWheel для корректировки прокрутки в зависимости от устройства указателя
    */
-  private mouseWheelWrapper = (event: WheelEvent): void => {
-    const deltaY = Math.trunc(Math.abs(event.deltaY));
+  private mouseWheelWrapper = (event: Event): void => {
+    const wheelEvent = event as WheelEvent;
+    const deltaY = Math.trunc(Math.abs(wheelEvent.deltaY));
 
     if (this._queue.size() < 4) {
       this._queue.enqueue(deltaY);
@@ -324,10 +327,10 @@ export class Input {
 
     if (this._allowThreshold && this._allowTrackpadScrolling) {
       this._allowTrackpadScrolling = false;
-      this.mouseWheel(event);
+      this.mouseWheel(wheelEvent);
       setTimeout(() => this._allowTrackpadScrolling = true, this._wheelThreshold);
     } else if (!this._allowThreshold) {
-      this.mouseWheel(event);
+      this.mouseWheel(wheelEvent);
     }
   };
 
@@ -374,36 +377,37 @@ export class Input {
   /**
    * Захватывает контекстное меню мыши (правый клик) и предотвращает распространение события
    */
-  private contextMenu = (event: MouseEvent): void => {
+  private contextMenu = (event: Event): void => {
     event.preventDefault();
   };
 
   /**
    * Захватывает события клавиатуры для обнаружения нажатия CTRL-SHIFT горячих клавиш
    */
-  private key = (event: KeyboardEvent): void => {
+  private key = (event: Event): void => {
+    const keyboardEvent = event as KeyboardEvent;
     // Отключаем проблемные горячие клавиши браузера
-    if ((event.code === 'F5' && event.ctrlKey) ||
-      (event.code === 'KeyI' && event.ctrlKey && event.shiftKey) ||
-      (event.code === 'F11')) {
-      event.preventDefault();
+    if ((keyboardEvent.code === 'F5' && keyboardEvent.ctrlKey) ||
+      (keyboardEvent.code === 'KeyI' && keyboardEvent.ctrlKey && keyboardEvent.shiftKey) ||
+      (keyboardEvent.code === 'F11')) {
+      keyboardEvent.preventDefault();
       return;
     }
 
     // Захватываем горячую клавишу меню
-    if (event.type === 'keydown' && event.code === 'KeyM' && event.ctrlKey && event.shiftKey) {
+    if (keyboardEvent.type === 'keydown' && keyboardEvent.code === 'KeyM' && keyboardEvent.ctrlKey && keyboardEvent.shiftKey) {
       if (document.fullscreenElement === null && this.callbacks.onmenuhotkey) {
         this.callbacks.onmenuhotkey();
-        event.preventDefault();
+        keyboardEvent.preventDefault();
       }
       return;
     }
 
     // Захватываем горячую клавишу полноэкранного режима
-    if (event.type === 'keydown' && event.code === 'KeyF' && event.ctrlKey && event.shiftKey) {
+    if (keyboardEvent.type === 'keydown' && keyboardEvent.code === 'KeyF' && keyboardEvent.ctrlKey && keyboardEvent.shiftKey) {
       if (document.fullscreenElement === null && this.callbacks.onfullscreenhotkey) {
         this.callbacks.onfullscreenhotkey();
-        event.preventDefault();
+        keyboardEvent.preventDefault();
       }
       return;
     }
@@ -489,27 +493,29 @@ export class Input {
   /**
    * Отправляет команду WebRTC приложению для подключения виртуального джойстика и инициализирует локальный GamepadManager
    */
-  private gamepadConnected = (event: GamepadEvent): void => {
-    console.log(`Gamepad connected at index ${event.gamepad.index}: ${event.gamepad.id}. ${event.gamepad.buttons.length} buttons, ${event.gamepad.axes.length} axes.`);
+  private gamepadConnected = (event: Event): void => {
+    const gamepadEvent = event as GamepadEvent;
+    console.log(`Gamepad connected at index ${gamepadEvent.gamepad.index}: ${gamepadEvent.gamepad.id}. ${gamepadEvent.gamepad.buttons.length} buttons, ${gamepadEvent.gamepad.axes.length} axes.`);
 
     if (this.callbacks.ongamepadconnected) {
-      this.callbacks.ongamepadconnected(event.gamepad.id);
+      this.callbacks.ongamepadconnected(gamepadEvent.gamepad.id);
     }
 
     this.gamepadManager = new GamepadManager(
-      event.gamepad,
+      gamepadEvent.gamepad,
       this.gamepadButton.bind(this),
       this.gamepadAxis.bind(this)
     );
 
-    this.send(`js,c,${event.gamepad.index},${btoa(event.gamepad.id)},${this.gamepadManager.numAxes},${this.gamepadManager.numButtons}`);
+    this.send(`js,c,${gamepadEvent.gamepad.index},${btoa(gamepadEvent.gamepad.id)},${this.gamepadManager.numAxes},${this.gamepadManager.numButtons}`);
   };
 
   /**
    * Отправляет команду отключения джойстика в WebRTC приложение
    */
-  private gamepadDisconnect = (event: GamepadEvent): void => {
-    console.log(`Gamepad ${event.gamepad.index} disconnected`);
+  private gamepadDisconnect = (event: Event): void => {
+    const gamepadEvent = event as GamepadEvent;
+    console.log(`Gamepad ${gamepadEvent.gamepad.index} disconnected`);
 
     if (this.callbacks.ongamepaddisconnected) {
       this.callbacks.ongamepaddisconnected();
@@ -520,7 +526,7 @@ export class Input {
       this.gamepadManager = null;
     }
 
-    this.send(`js,d,${event.gamepad.index}`);
+    this.send(`js,d,${gamepadEvent.gamepad.index}`);
   };
 
   /**

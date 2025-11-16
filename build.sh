@@ -6,7 +6,9 @@
 # Скрипт сборки Selkies-GStreamer
 #
 # Использование:
-#   ./build.sh                                    # Собрать всё (с возможностью пропустить GStreamer)
+#   ./build.sh                                    # Собрать всё (gst-web-react по умолчанию)
+#   WEB_VARIANT=gst-web ./build.sh                # Собрать с оригинальным gst-web (Vue.js)
+#   WEB_VARIANT=gst-web-react ./build.sh          # Собрать с gst-web-react (React+TS, по умолчанию)
 #   BUILD_GSTREAMER=false ./build.sh              # Пропустить GStreamer полностью
 #   BUILD_JS_INTERPOSER=false ./build.sh          # Пропустить JS Interposer
 #   SELKIES_VERSION=1.7.0 ./build.sh              # Задать свою версию
@@ -36,6 +38,19 @@ BUILD_PYTHON=${BUILD_PYTHON:-true}
 BUILD_WEB=${BUILD_WEB:-true}
 BUILD_JS_INTERPOSER=${BUILD_JS_INTERPOSER:-true}
 BUILD_GSTREAMER=${BUILD_GSTREAMER:-true}
+WEB_VARIANT=${WEB_VARIANT:-gst-web-react}  # gst-web-react (по умолчанию) или gst-web
+
+# Проверка варианта web интерфейса
+if [ "$WEB_VARIANT" != "gst-web" ] && [ "$WEB_VARIANT" != "gst-web-react" ]; then
+    echo -e "${RED}✗ Неверный WEB_VARIANT: ${WEB_VARIANT}${NC}"
+    echo "  Допустимые значения: gst-web, gst-web-react"
+    exit 1
+fi
+
+if [ ! -d "${REPO_ROOT}/addons/${WEB_VARIANT}" ]; then
+    echo -e "${RED}✗ Директория ${WEB_VARIANT} не найдена в addons/${NC}"
+    exit 1
+fi
 
 # Проверка Docker
 if ! docker ps >/dev/null 2>&1; then
@@ -54,10 +69,11 @@ echo "  Корневой каталог: ${REPO_ROOT}"
 echo "  Версия: ${VERSION}"
 echo "  Дистрибутив: ${DISTRIB_IMAGE} ${DISTRIB_RELEASE}"
 echo "  Архитектура: ${ARCH}"
+echo "  Web вариант: ${WEB_VARIANT} $([ "$WEB_VARIANT" = "gst-web-react" ] && echo "(React+TypeScript)" || echo "(Vue.js)")"
 echo ""
 echo -e "${BLUE}Что будет собрано:${NC}"
 echo "  [$([ "$BUILD_PYTHON" = "true" ] && echo "x" || echo " ")] Python wheel (обязательный)"
-echo "  [$([ "$BUILD_WEB" = "true" ] && echo "x" || echo " ")] Web интерфейс (обязательный)"
+echo "  [$([ "$BUILD_WEB" = "true" ] && echo "x" || echo " ")] Web интерфейс (обязательный) - ${WEB_VARIANT}"
 echo "  [$([ "$BUILD_JS_INTERPOSER" = "true" ] && echo "x" || echo " ")] JS Interposer (опционально, ~30 сек)"
 echo "  [$([ "$BUILD_GSTREAMER" = "true" ] && echo "x" || echo " ")] GStreamer bundle (опционально, ~45 мин, можно пропустить)"
 echo ""
@@ -112,21 +128,75 @@ if [ "$BUILD_PYTHON" = "true" ]; then
 fi
 
 # ========================================
-# 2. Web интерфейс - gst-web образ
+# 2. Web интерфейс - gst-web или gst-web-react
 # ========================================
 if [ "$BUILD_WEB" = "true" ]; then
-    echo -e "${GREEN}[2/4] Сборка Web интерфейса...${NC}"
+    echo -e "${GREEN}[2/4] Сборка Web интерфейса (${WEB_VARIANT})...${NC}"
     
-    # Собрать Docker образ gst-web
+    # Определяем Dockerfile и образ
+    if [ "$WEB_VARIANT" = "gst-web-react" ]; then
+        DOCKERFILE="${REPO_ROOT}/addons/gst-web-react/Dockerfile"
+        WEB_IMAGE="gst-web-react:latest"
+        WEB_DIR="gst-web-react"
+        ARCHIVE_NAME="gst-web-react.tar.gz"
+    else
+        DOCKERFILE="${REPO_ROOT}/addons/gst-web/Dockerfile"
+        WEB_IMAGE="gst-web:latest"
+        WEB_DIR="gst-web"
+        ARCHIVE_NAME="gst-web.tar.gz"
+    fi
+    
+    # Проверяем наличие Dockerfile
+    if [ ! -f "${DOCKERFILE}" ]; then
+        echo -e "${YELLOW}  ⚠ Dockerfile не найден для ${WEB_VARIANT}, создаем...${NC}"
+        
+        # Создаем Dockerfile для gst-web-react если его нет
+        if [ "$WEB_VARIANT" = "gst-web-react" ]; then
+            cat > "${DOCKERFILE}" << 'EOF'
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# Копируем package.json и package-lock.json
+COPY package*.json ./
+
+# Устанавливаем зависимости
+RUN npm ci
+
+# Копируем исходники
+COPY . .
+
+# Собираем проект
+RUN npm run build
+
+# Создаем финальный образ
+FROM alpine:latest
+
+WORKDIR /opt
+
+# Копируем собранные файлы
+COPY --from=builder /app/dist /opt/gst-web-react
+
+# Создаем tar.gz архив
+RUN cd /opt && tar -czf gst-web-react.tar.gz gst-web-react
+
+CMD ["sh"]
+EOF
+            echo -e "${GREEN}    ✓ Dockerfile создан${NC}"
+        fi
+    fi
+    
+    # Собрать Docker образ
+    echo -e "${CYAN}  → Сборка Docker образа...${NC}"
     docker build \
-        -t gst-web:latest \
-        -f "${REPO_ROOT}/addons/gst-web/Dockerfile" \
-        "${REPO_ROOT}/addons/gst-web" 2>&1 | grep -E "(Step|Successfully)" || true
+        -t "${WEB_IMAGE}" \
+        -f "${DOCKERFILE}" \
+        "${REPO_ROOT}/addons/${WEB_VARIANT}" 2>&1 | grep -E "(Step|Successfully)" || true
     
     # Извлечь архив из образа
     echo -e "${CYAN}  → Извлечение архива из образа...${NC}"
-    CONTAINER_ID=$(docker create gst-web:latest)
-    docker cp "${CONTAINER_ID}:/opt/gst-web.tar.gz" \
+    CONTAINER_ID=$(docker create "${WEB_IMAGE}")
+    docker cp "${CONTAINER_ID}:/opt/${ARCHIVE_NAME}" \
         "${REPO_ROOT}/dist/selkies-gstreamer-web_v${VERSION}.tar.gz" || {
         echo -e "${RED}  ✗ Не удалось извлечь web архив${NC}"
         docker rm "${CONTAINER_ID}" >/dev/null
@@ -138,8 +208,8 @@ if [ "$BUILD_WEB" = "true" ]; then
         echo -e "${GREEN}  ✓ Web интерфейс: selkies-gstreamer-web_v${VERSION}.tar.gz${NC}"
         
         # Проверка структуры
-        if tar -tzf "${REPO_ROOT}/dist/selkies-gstreamer-web_v${VERSION}.tar.gz" 2>/dev/null | grep -q "gst-web/index.html"; then
-            echo -e "${GREEN}    ✓ Структура корректна${NC}"
+        if tar -tzf "${REPO_ROOT}/dist/selkies-gstreamer-web_v${VERSION}.tar.gz" 2>/dev/null | grep -q "index.html"; then
+            echo -e "${GREEN}    ✓ Структура корректна (${WEB_VARIANT})${NC}"
         fi
     else
         echo -e "${RED}  ✗ Не удалось создать web архив${NC}"
