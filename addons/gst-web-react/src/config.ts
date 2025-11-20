@@ -39,6 +39,7 @@ export interface AppConfig {
  * Получить конфигурацию подключения
  * Если включен dev режим, используется dev.connection
  * Иначе используется defaultConnection или значения из window.location
+ * Также проверяет параметры URL: server и port
  */
 export function getConnectionConfig(config?: AppConfig): ConnectionConfig {
   if (config?.dev?.enabled && config.dev.connection) {
@@ -49,21 +50,45 @@ export function getConnectionConfig(config?: AppConfig): ConnectionConfig {
     return config.defaultConnection;
   }
 
-  // По умолчанию используем текущий location
-  const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
-  const host = window.location.hostname;
-  const port = window.location.port ? parseInt(window.location.port) : (protocol === 'https' ? 443 : 80);
+  // Парсим параметры из URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const serverParam = urlParams.get('server');
+  const portParam = urlParams.get('port');
+  const appParam = urlParams.get('app');
   
-  // Парсим appName из pathname
-  const pathname = window.location.pathname;
-  const appName = pathname.endsWith('/') 
-    ? pathname.split('/').filter(p => p)[0] || 'webrtc'
-    : pathname.split('/').filter(p => p).pop() || 'webrtc';
+  // Если указан server в URL, используем его
+  let host: string;
+  let port: number;
+  let secure: boolean;
+  
+  if (serverParam) {
+    host = serverParam;
+    port = portParam ? parseInt(portParam) : 8080;
+    // Определяем протокол по порту или используем http по умолчанию
+    secure = port === 443 || port === 8443;
+  } else {
+    // По умолчанию используем текущий location
+    const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
+    host = window.location.hostname;
+    port = window.location.port ? parseInt(window.location.port) : (protocol === 'https' ? 443 : 80);
+    secure = protocol === 'https';
+  }
+  
+  // Парсим appName из параметра app или pathname
+  let appName: string;
+  if (appParam) {
+    appName = appParam;
+  } else {
+    const pathname = window.location.pathname;
+    appName = pathname.endsWith('/') 
+      ? pathname.split('/').filter(p => p)[0] || 'webrtc'
+      : pathname.split('/').filter(p => p).pop() || 'webrtc';
+  }
 
   return {
     host,
     port,
-    secure: protocol === 'https',
+    secure,
     appName,
     basePath: '/',
   };
