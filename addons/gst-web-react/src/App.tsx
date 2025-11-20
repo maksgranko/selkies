@@ -57,6 +57,7 @@ interface GamepadState {
 const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   // Получаем конфигурацию подключения СРАЗУ
   const config = connectionConfig || getConnectionConfig(appConfig);
+  console.log('[App] Using connection config:', config);
   
   // Функции для работы с localStorage - определяем ДО использования
   const getIntParam = (key: string, defaultValue: number | null): number | null => {
@@ -569,6 +570,8 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
 
     // Загружаем TURN конфигурацию
     const turnUrl = createTurnUrl(config);
+    console.log('[App] TURN URL:', turnUrl);
+    console.log('[App] Connection config:', config);
     fetch(turnUrl)
       .then(response => response.json())
       .then((config) => {

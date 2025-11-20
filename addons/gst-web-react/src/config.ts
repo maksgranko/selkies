@@ -66,9 +66,20 @@ export function getConnectionConfig(config?: AppConfig): ConnectionConfig {
   const protocol = secureParam ? (secureParam === 'true' ? 'https' : 'http') 
                   : (window.location.protocol === 'https:' ? 'https' : 'http');
   const host = serverParam || window.location.hostname;
-  const port = portParam ? parseInt(portParam) 
-              : (window.location.port ? parseInt(window.location.port) 
-                : (protocol === 'https' ? 443 : 80));
+  
+  // Если указан server в параметрах, но не указан port - используем стандартные порты
+  // Иначе используем port из URL или из window.location
+  let port: number;
+  if (portParam) {
+    port = parseInt(portParam);
+  } else if (serverParam) {
+    // Если указан внешний сервер, но порт не указан - используем стандартные порты
+    port = protocol === 'https' ? 443 : 80;
+  } else {
+    // Если используем текущий location - берём его порт
+    port = window.location.port ? parseInt(window.location.port) 
+           : (protocol === 'https' ? 443 : 80);
+  }
   
   // Парсим appName из URL параметров или pathname
   let appName = appParam;
