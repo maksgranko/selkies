@@ -39,6 +39,12 @@ export interface AppConfig {
  * Получить конфигурацию подключения
  * Если включен dev режим, используется dev.connection
  * Иначе используется defaultConnection или значения из window.location
+ * 
+ * Поддерживает URL параметры:
+ * - ?server=IP - указать сервер для подключения
+ * - &port=PORT - указать порт
+ * - &app=APPNAME - указать имя приложения
+ * - &debug=true - включить отладку
  */
 export function getConnectionConfig(config?: AppConfig): ConnectionConfig {
   if (config?.dev?.enabled && config.dev.connection) {
@@ -49,16 +55,29 @@ export function getConnectionConfig(config?: AppConfig): ConnectionConfig {
     return config.defaultConnection;
   }
 
-  // По умолчанию используем текущий location
-  const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
-  const host = window.location.hostname;
-  const port = window.location.port ? parseInt(window.location.port) : (protocol === 'https' ? 443 : 80);
+  // Парсим URL параметры
+  const urlParams = new URLSearchParams(window.location.search);
+  const serverParam = urlParams.get('server');
+  const portParam = urlParams.get('port');
+  const appParam = urlParams.get('app');
+  const secureParam = urlParams.get('secure');
+
+  // По умолчанию используем текущий location или параметры из URL
+  const protocol = secureParam ? (secureParam === 'true' ? 'https' : 'http') 
+                  : (window.location.protocol === 'https:' ? 'https' : 'http');
+  const host = serverParam || window.location.hostname;
+  const port = portParam ? parseInt(portParam) 
+              : (window.location.port ? parseInt(window.location.port) 
+                : (protocol === 'https' ? 443 : 80));
   
-  // Парсим appName из pathname
-  const pathname = window.location.pathname;
-  const appName = pathname.endsWith('/') 
-    ? pathname.split('/').filter(p => p)[0] || 'webrtc'
-    : pathname.split('/').filter(p => p).pop() || 'webrtc';
+  // Парсим appName из URL параметров или pathname
+  let appName = appParam;
+  if (!appName) {
+    const pathname = window.location.pathname;
+    appName = pathname.endsWith('/') 
+      ? pathname.split('/').filter(p => p)[0] || 'webrtc'
+      : pathname.split('/').filter(p => p).pop() || 'webrtc';
+  }
 
   return {
     host,

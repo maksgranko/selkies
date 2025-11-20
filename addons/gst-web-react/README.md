@@ -68,21 +68,24 @@ npm run build
 Откройте приложение с параметрами:
 
 ```
-http://your-server.com/?server=111.111.111.111&port=8080&app=desktop&debug=true
+http://localhost:3000/?server=209.250.236.147&port=8080&app=desktop&debug=true
 ```
 
 **Доступные параметры:**
 
 | Параметр | Описание | По умолчанию |
 |----------|----------|--------------|
-| `server` | IP/hostname WebRTC сервера | `window.location.hostname` |
-| `port` | Порт сигнального сервера | `443` |
-| `app` | Имя приложения | `selkies` |
+| `server` | IP/hostname WebRTC сервера (все запросы пойдут на этот сервер) | `window.location.hostname` |
+| `port` | Порт сигнального сервера | `window.location.port` или `443`/`80` |
+| `app` | Имя приложения | `webrtc` |
+| `secure` | Использовать HTTPS/WSS (`true`/`false`) | определяется по протоколу |
 | `debug` | Режим отладки (показывает статистику) | `false` |
 | `encoder` | Кодек (h264/h265/vp8/vp9/av1) | автоопределение |
 | `audio` | Включить аудио | `true` |
 | `resizeRemote` | Изменять разрешение на сервере | `true` |
 | `scaleLocal` | Локальное масштабирование | `true` |
+
+**Важно:** При указании параметра `server`, клиент будет делать все запросы (включая `/turn`, WebSocket и т.д.) к указанному серверу, а не к `localhost`.
 
 ### Через React компонент (для интеграции)
 

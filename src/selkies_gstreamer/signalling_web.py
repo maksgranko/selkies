@@ -185,6 +185,10 @@ class WebRTCSimpleServer(object):
                 ("Connection", "close"),
                 ("Content-Length", str(len(body))),
                 ("Content-Type", "text/plain; charset=utf-8"),
+                ("Access-Control-Allow-Origin", "*"),
+                ("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"),
+                ("Access-Control-Allow-Headers", "*"),
+                ("Access-Control-Max-Age", "86400"),
             ]
         )
         # Overriding and appending headers if provided
@@ -198,6 +202,11 @@ class WebRTCSimpleServer(object):
         path = request.path
         request_headers = request.headers
         response_headers = websockets.datastructures.Headers()
+        
+        # Handle CORS preflight OPTIONS requests
+        if request.method == "OPTIONS":
+            return self.http_response(http.HTTPStatus.OK, response_headers, b'')
+        
         username = ''
         if self.enable_basic_auth:
             if "basic" in request_headers.get("authorization", "").lower():
