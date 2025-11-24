@@ -12,8 +12,25 @@ async def websocket_handler(request):
             break
     return ws
 
-app = web.Application()
+async def turn_handler(request):
+    # Return empty ICE servers for now, or configure as needed
+    return web.json_response({"iceServers": []})
+
+@web.middleware
+async def cors_middleware(request, handler):
+    if request.method == 'OPTIONS':
+        response = web.Response()
+    else:
+        response = await handler(request)
+    
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS, PUT, DELETE'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
+
+app = web.Application(middlewares=[cors_middleware])
 app.router.add_get("/ws", websocket_handler)
+app.router.add_get("/turn", turn_handler)
 
 # Serve static files
 current_path = pathlib.Path(__file__).parent
