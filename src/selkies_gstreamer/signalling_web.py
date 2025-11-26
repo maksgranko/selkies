@@ -519,6 +519,16 @@ class WebRTCSimpleServer(object):
             sys.exit(1)
         return sslctx
 
+    async def process_response(self, connection, request, response):
+        """
+        Add CORS headers to the handshake response.
+        """
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Max-Age"] = "86400"
+        return response
+
     async def run(self):
         async def handler(ws):
             '''
@@ -548,7 +558,7 @@ class WebRTCSimpleServer(object):
         # Websocket and HTTP server
         http_handler = functools.partial(self.process_request, self.web_root)
         self.stop_server = asyncio.Future()
-        async with websockets.asyncio.server.serve(handler, self.addr, self.port, ssl=sslctx, process_request=http_handler,
+        async with websockets.asyncio.server.serve(handler, self.addr, self.port, ssl=sslctx, process_request=http_handler, process_response=self.process_response,
                                # Maximum number of messages that websockets will pop
                                # off the asyncio and OS buffers per connection. See:
                                # https://websockets.readthedocs.io/en/stable/api.html#websockets.protocol.WebSocketCommonProtocol
