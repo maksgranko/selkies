@@ -2916,7 +2916,7 @@
         "kind": 5,
         "importPath": "web",
         "description": "web",
-        "peekOfCode": "app = web.Application()\napp.router.add_get(\"/ws\", websocket_handler)\n# Serve static files\ncurrent_path = pathlib.Path(__file__).parent\nstatic_path = current_path / \"static\"\nprint(static_path)\napp.router.add_static(\"/\", path=static_path, name=\"static\")\nif __name__ == '__main__':\n    # Parse command-line arguments\n    parser = argparse.ArgumentParser(description='Run WebSocket server')",
+        "peekOfCode": "app = web.Application(middlewares=[cors_middleware])\napp.router.add_get(\"/ws\", websocket_handler)\napp.router.add_get(\"/turn\", turn_handler)\n# Serve static files\ncurrent_path = pathlib.Path(__file__).parent\nstatic_path = current_path / \"static\"\nprint(static_path)\napp.router.add_static(\"/\", path=static_path, name=\"static\")\nif __name__ == '__main__':\n    # Parse command-line arguments",
         "detail": "web",
         "documentation": {}
     },

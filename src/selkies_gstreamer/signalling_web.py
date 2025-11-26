@@ -203,9 +203,28 @@ class WebRTCSimpleServer(object):
         request_headers = request.headers
         response_headers = websockets.datastructures.Headers()
         
+        origin = request_headers.get("Origin")
+        
+        # Helper to set CORS headers
+        def set_cors_headers(headers):
+            if origin:
+                headers["Access-Control-Allow-Origin"] = origin
+                headers["Access-Control-Allow-Credentials"] = "true"
+            else:
+                headers["Access-Control-Allow-Origin"] = "*"
+            
+            allowed_headers = ["Content-Type", "Authorization", self.turn_auth_header_name]
+            headers["Access-Control-Allow-Headers"] = ", ".join(allowed_headers)
+            headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            headers["Access-Control-Max-Age"] = "86400"
+
         # Handle CORS preflight OPTIONS requests
         if request.method == "OPTIONS":
+            set_cors_headers(response_headers)
             return self.http_response(http.HTTPStatus.OK, response_headers, b'')
+        
+        # Apply CORS headers to all other requests
+        set_cors_headers(response_headers)
         
         # WebSocket paths - пропускаем
         if path == "/ws/" or path == "/ws" or path.endswith("/signalling/") or path.endswith("/signalling"):

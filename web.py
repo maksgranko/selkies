@@ -12,16 +12,17 @@ async def websocket_handler(request):
             break
     return ws
 
-async def turn_handler(request):
-    # Return empty ICE servers for now, or configure as needed
-    return web.json_response({"iceServers": []})
-
 @web.middleware
 async def cors_middleware(request, handler):
-    if request.method == 'OPTIONS':
-        response = web.Response()
-    else:
-        response = await handler(request)
+    try:
+        if request.method == 'OPTIONS':
+            response = web.Response()
+        else:
+            response = await handler(request)
+    except web.HTTPException as e:
+        response = e
+    except Exception as e:
+        response = web.Response(status=500, text=str(e))
     
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS, PUT, DELETE'
@@ -30,13 +31,15 @@ async def cors_middleware(request, handler):
 
 app = web.Application(middlewares=[cors_middleware])
 app.router.add_get("/ws", websocket_handler)
-app.router.add_get("/turn", turn_handler)
 
 # Serve static files
 current_path = pathlib.Path(__file__).parent
 static_path = current_path / "static"
-print(static_path)
-app.router.add_static("/", path=static_path, name="static")
+if static_path.exists():
+    print(f"Serving static files from: {static_path}")
+    app.router.add_static("/", path=static_path, name="static")
+else:
+    print(f"Warning: Static directory not found at {static_path}")
 
 if __name__ == '__main__':
     # Parse command-line arguments
