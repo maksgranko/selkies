@@ -4,6 +4,11 @@ import argparse
 
 async def websocket_handler(request):
     ws = web.WebSocketResponse()
+    # Set CORS headers before prepare, as middleware runs too late for the handshake
+    ws.headers['Access-Control-Allow-Origin'] = '*'
+    ws.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS, PUT, DELETE'
+    ws.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    
     await ws.prepare(request)
     async for msg in ws:
         if msg.type == web.WSMsgType.TEXT:
@@ -22,11 +27,17 @@ async def cors_middleware(request, handler):
     except web.HTTPException as e:
         response = e
     except Exception as e:
+        print(f"Error handling request: {e}")
+        import traceback
+        traceback.print_exc()
         response = web.Response(status=500, text=str(e))
     
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS, PUT, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    # Only set headers if response is not prepared (committed)
+    if not response.prepared:
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS, PUT, DELETE'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    
     return response
 
 app = web.Application(middlewares=[cors_middleware])

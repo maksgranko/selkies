@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { WebRTCDemo } from './webrtc';
 import { WebRTCDemoSignalling } from './signalling';
-import { ConnectionConfig, getConnectionConfig, createSignallingUrl, createTurnUrl } from './config';
+import { ConnectionConfig, getConnectionConfig, createSignallingUrl } from './config';
 import { stringToBase64 } from './util';
 import './App.css';
 
@@ -58,7 +58,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   // Получаем конфигурацию подключения СРАЗУ
   const config = connectionConfig || getConnectionConfig(appConfig);
   console.log('[App] Using connection config:', config);
-  
+
   // Функции для работы с localStorage - определяем ДО использования
   const getIntParam = (key: string, defaultValue: number | null): number | null => {
     const prefixedKey = `${config.appName || 'webrtc'}_${key}`;
@@ -81,7 +81,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   const initialResizeRemote = getBoolParam("resizeRemote", true) ?? true;
   const initialScaleLocalFromStorage = getBoolParam("scaleLocal", null);
   const initialScaleLocal = initialScaleLocalFromStorage !== null ? initialScaleLocalFromStorage : !initialResizeRemote;
-  
+
   const videoElementRef = useRef<HTMLVideoElement>(null);
   const audioElementRef = useRef<HTMLAudioElement>(null);
   const webrtcRef = useRef<WebRTCDemo | null>(null);
@@ -147,7 +147,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
     // Функция для включения отслеживания статистики
     const enableStatWatch = () => {
       if (!webrtcRef.current || !audioWebrtcRef.current) return;
-      
+
       let videoBytesReceivedStart = 0;
       let audioBytesReceivedStart = 0;
       let previousVideoJitterBufferDelay = 0.0;
@@ -364,28 +364,28 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
           webrtc.input.attach();
         }
 
-          // Отправляем клиентские метрики через data channel каждые 5 секунд
-          metricsIntervalRef.current = window.setInterval(() => {
-            if (!webrtcRef.current) return;
-            const currentFrameRate = connectionStat.connectionFrameRate;
-            const currentLatency = connectionStat.connectionLatency;
-            if (currentFrameRate === parseInt(String(currentFrameRate), 10)) {
-              webrtcRef.current.sendDataChannelMessage(`_f,${currentFrameRate}`);
-            }
-            if (currentLatency === parseInt(String(currentLatency), 10)) {
-              webrtcRef.current.sendDataChannelMessage(`_l,${currentLatency}`);
-            }
-          }, 5000);
-        },
-        ondatachannelclose: () => {
-          if (webrtc.input) {
-            webrtc.input.detach();
+        // Отправляем клиентские метрики через data channel каждые 5 секунд
+        metricsIntervalRef.current = window.setInterval(() => {
+          if (!webrtcRef.current) return;
+          const currentFrameRate = connectionStat.connectionFrameRate;
+          const currentLatency = connectionStat.connectionLatency;
+          if (currentFrameRate === parseInt(String(currentFrameRate), 10)) {
+            webrtcRef.current.sendDataChannelMessage(`_f,${currentFrameRate}`);
           }
-          if (metricsIntervalRef.current) {
-            clearInterval(metricsIntervalRef.current);
-            metricsIntervalRef.current = null;
+          if (currentLatency === parseInt(String(currentLatency), 10)) {
+            webrtcRef.current.sendDataChannelMessage(`_l,${currentLatency}`);
           }
-        },
+        }, 5000);
+      },
+      ondatachannelclose: () => {
+        if (webrtc.input) {
+          webrtc.input.detach();
+        }
+        if (metricsIntervalRef.current) {
+          clearInterval(metricsIntervalRef.current);
+          metricsIntervalRef.current = null;
+        }
+      },
       onplaystreamrequired: () => {
         setShowStart(true);
       },
@@ -568,41 +568,38 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
       }
     });
 
-    // Загружаем TURN конфигурацию
-    const turnUrl = createTurnUrl(config);
-    console.log('[App] TURN URL:', turnUrl);
-    console.log('[App] Connection config:', config);
-    fetch(turnUrl)
-      .then(response => response.json())
-      .then((config) => {
-        webrtc.forceTurn = turnSwitch;
-        audioWebrtc.forceTurn = turnSwitch;
+    // Используем конфигурацию TURN из config
+    const iceServers = config.iceServers || [];
 
-        // Получаем начальное разрешение (как в оригинале строка 837)
-        const windowRes = webrtc.input.getWindowResolution();
-        setWindowResolution(windowRes);
+    webrtc.forceTurn = turnSwitch;
+    audioWebrtc.forceTurn = turnSwitch;
 
-        // Если scaleLocal === false, устанавливаем фиксированные размеры (строка 839-841)
-        if (scaleLocal === false) {
-          const pixelRatio = window.devicePixelRatio || 1; // Защита от 0
-          videoElement.style.width = `${windowRes[0] / pixelRatio}px`;
-          videoElement.style.height = `${windowRes[1] / pixelRatio}px`;
-        }
+    // Получаем начальное разрешение (как в оригинале строка 837)
+    const windowRes = webrtc.input.getWindowResolution();
+    setWindowResolution(windowRes);
 
-        if (config.iceServers.length > 1) {
-          setDebugEntries(prev => [...prev, applyTimestamp(`[app] using TURN servers: ${config.iceServers[1].urls.join(", ")}`)]);
-        } else {
-          setDebugEntries(prev => [...prev, applyTimestamp("[app] no TURN servers found.")]);
-        }
+    // Если scaleLocal === false, устанавливаем фиксированные размеры (строка 839-841)
+    if (scaleLocal === false) {
+      const pixelRatio = window.devicePixelRatio || 1; // Защита от 0
+      videoElement.style.width = `${windowRes[0] / pixelRatio}px`;
+      videoElement.style.height = `${windowRes[1] / pixelRatio}px`;
+    }
 
-        webrtc.rtcPeerConfig = config;
-        audioWebrtc.rtcPeerConfig = config;
-        webrtc.connect();
-        audioWebrtc.connect();
-      })
-      .catch(error => {
-        console.error("Error fetching TURN config:", error);
-      });
+    if (iceServers.length > 0) {
+      setDebugEntries(prev => [...prev, applyTimestamp(`[app] using TURN servers: ${iceServers[0].urls}`)]);
+      // Обновляем конфиг с переданными серверами
+      const rtcConfig: RTCConfiguration = {
+        iceServers: iceServers,
+        iceTransportPolicy: turnSwitch ? 'relay' : 'all'
+      };
+      webrtc.rtcPeerConfig = rtcConfig;
+      audioWebrtc.rtcPeerConfig = rtcConfig;
+    } else {
+      setDebugEntries(prev => [...prev, applyTimestamp("[app] no TURN servers provided, using default STUN.")]);
+    }
+
+    webrtc.connect();
+    audioWebrtc.connect();
 
     // Обработка событий окна
     const handleFocus = () => {

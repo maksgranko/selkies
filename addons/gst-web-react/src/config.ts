@@ -12,7 +12,10 @@ export interface ConnectionConfig {
   /** Путь к приложению (по умолчанию "webrtc") */
   appName?: string;
   /** Базовый путь (по умолчанию "/") */
+  /** Базовый путь (по умолчанию "/") */
   basePath?: string;
+  /** ICE сервера для WebRTC */
+  iceServers?: RTCIceServer[];
 }
 
 /**
@@ -62,11 +65,18 @@ export function getConnectionConfig(config?: AppConfig): ConnectionConfig {
   const appParam = urlParams.get('app');
   const secureParam = urlParams.get('secure');
 
+  // TURN параметры из URL
+  const turnHost = urlParams.get('turn_host');
+  const turnPort = urlParams.get('turn_port');
+  const turnUsername = urlParams.get('turn_username');
+  const turnPassword = urlParams.get('turn_password');
+  const turnProtocol = urlParams.get('turn_protocol') || 'udp';
+
   // По умолчанию используем текущий location или параметры из URL
-  const protocol = secureParam ? (secureParam === 'true' ? 'https' : 'http') 
-                  : (window.location.protocol === 'https:' ? 'https' : 'http');
+  const protocol = secureParam ? (secureParam === 'true' ? 'https' : 'http')
+    : (window.location.protocol === 'https:' ? 'https' : 'http');
   const host = serverParam || window.location.hostname;
-  
+
   // Если указан server в параметрах, но не указан port - используем стандартные порты
   // Иначе используем port из URL или из window.location
   let port: number;
@@ -77,26 +87,37 @@ export function getConnectionConfig(config?: AppConfig): ConnectionConfig {
     port = protocol === 'https' ? 443 : 80;
   } else {
     // Если используем текущий location - берём его порт
-    port = window.location.port ? parseInt(window.location.port) 
-           : (protocol === 'https' ? 443 : 80);
+    port = window.location.port ? parseInt(window.location.port)
+      : (protocol === 'https' ? 443 : 80);
   }
-  
+
   // Парсим appName из URL параметров или pathname
   let appName = appParam;
   if (!appName) {
     const pathname = window.location.pathname;
-    appName = pathname.endsWith('/') 
+    appName = pathname.endsWith('/')
       ? pathname.split('/').filter(p => p)[0] || 'webrtc'
       : pathname.split('/').filter(p => p).pop() || 'webrtc';
   }
 
-  return {
+  const connectionConfig: ConnectionConfig = {
     host,
     port,
     secure: protocol === 'https',
     appName,
     basePath: '/',
   };
+
+  if (turnHost) {
+    const tPort = turnPort ? `:${turnPort}` : '';
+    connectionConfig.iceServers = [{
+      urls: `turn:${turnHost}${tPort}?transport=${turnProtocol}`,
+      username: turnUsername || undefined,
+      credential: turnPassword || undefined
+    }];
+  }
+
+  return connectionConfig;
 }
 
 /**
@@ -107,19 +128,8 @@ export function createSignallingUrl(config: ConnectionConfig): string {
   const port = config.port ? `:${config.port}` : '';
   const basePath = config.basePath || '/';
   const appName = config.appName || 'webrtc';
-  
-  return `${protocol}://${config.host}${port}${basePath}${appName}/signalling/`;
-}
 
-/**
- * Создать URL для TURN конфигурации
- */
-export function createTurnUrl(config: ConnectionConfig): string {
-  const protocol = config.secure ? 'https' : 'http';
-  const port = config.port ? `:${config.port}` : '';
-  const basePath = config.basePath || '/';
-  
-  return `${protocol}://${config.host}${port}${basePath}turn`;
+  return `${protocol}://${config.host}${port}${basePath}${appName}/signalling/`;
 }
 
 
