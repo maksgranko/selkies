@@ -204,6 +204,10 @@ class WebRTCSimpleServer(object):
             request_headers = request.headers
             response_headers = websockets.datastructures.Headers()
             
+            # Debugging: Log request details
+            # logger.info(f"Request type: {type(request)}")
+            # logger.info(f"Request dir: {dir(request)}")
+            
             origin = request_headers.get("Origin")
             
             # Helper to set CORS headers
@@ -219,8 +223,11 @@ class WebRTCSimpleServer(object):
                 headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
                 headers["Access-Control-Max-Age"] = "86400"
 
+            # Safely get method, default to GET if missing
+            method = getattr(request, 'method', 'GET')
+
             # Handle CORS preflight OPTIONS requests
-            if request.method == "OPTIONS":
+            if method == "OPTIONS":
                 set_cors_headers(response_headers)
                 return self.http_response(http.HTTPStatus.OK, response_headers, b'')
             
