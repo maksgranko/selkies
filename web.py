@@ -1,21 +1,48 @@
-from aiohttp import web
-import pathlib
-import argparse
+import logging
+import json
 
 async def websocket_handler(request):
     ws = web.WebSocketResponse()
-    # Set CORS headers before prepare, as middleware runs too late for the handshake
+    # Set CORS headers before prepare
     ws.headers['Access-Control-Allow-Origin'] = '*'
     ws.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS, PUT, DELETE'
     ws.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     
     await ws.prepare(request)
-    async for msg in ws:
-        if msg.type == web.WSMsgType.TEXT:
-            await ws.send_str("Echo: " + msg.data)
-        elif msg.type == web.WSMsgType.CLOSED:
-            break
+    
+    try:
+        async for msg in ws:
+            if msg.type == web.WSMsgType.TEXT:
+                data = msg.data
+                if data.startswith('HELLO'):
+                    # Respond with HELLO to satisfy client handshake
+                    await ws.send_str('HELLO')
+                elif data.startswith('SESSION'):
+                    # Respond with SESSION_OK
+                    await ws.send_str('SESSION_OK')
+                else:
+                    # Echo or handle other messages
+                    # For now, just log
+                    print(f"Received: {data}")
+            elif msg.type == web.WSMsgType.CLOSED:
+                break
+            elif msg.type == web.WSMsgType.ERROR:
+                print('ws connection closed with exception %s', ws.exception())
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        
     return ws
+
+async def index_handler(request):
+    # Handle WebSocket connection at root
+    if request.headers.get('Upgrade', '').lower() == 'websocket':
+        return await websocket_handler(request)
+    
+    # Serve index.html if it exists
+    index_file = static_path / "index.html"
+    if index_file.exists():
+        return web.FileResponse(index_file)
+    return web.Response(text="Selkies Signalling Server Running")
 
 @web.middleware
 async def cors_middleware(request, handler):
@@ -41,6 +68,8 @@ async def cors_middleware(request, handler):
     return response
 
 app = web.Application(middlewares=[cors_middleware])
+# Add root handler for WebSocket support at /
+app.router.add_get("/", index_handler)
 app.router.add_get("/ws", websocket_handler)
 
 # Serve static files
