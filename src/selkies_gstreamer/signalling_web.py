@@ -39,7 +39,7 @@ web_logger = logging.getLogger("web")
 
 # websockets logs an error if a connection is opened and closed before any data is sent.
 # The client seems to do same thing, causing an inital handshake error.
-logging.getLogger("websockets").setLevel(logging.CRITICAL)
+# logging.getLogger("websockets").setLevel(logging.CRITICAL)
 
 MIME_TYPES = {
     "html": "text/html",
@@ -199,36 +199,42 @@ class WebRTCSimpleServer(object):
         return websockets.http11.Response(status.value, status.phrase, headers, body)
 
     async def process_request(self, server_root, connection, request):
-        path = request.path
-        request_headers = request.headers
-        response_headers = websockets.datastructures.Headers()
-        
-        origin = request_headers.get("Origin")
-        
-        # Helper to set CORS headers
-        def set_cors_headers(headers):
-            if origin:
-                headers["Access-Control-Allow-Origin"] = origin
-                headers["Access-Control-Allow-Credentials"] = "true"
-            else:
-                headers["Access-Control-Allow-Origin"] = "*"
+        try:
+            path = request.path
+            request_headers = request.headers
+            response_headers = websockets.datastructures.Headers()
             
-            allowed_headers = ["Content-Type", "Authorization", self.turn_auth_header_name]
-            headers["Access-Control-Allow-Headers"] = ", ".join(allowed_headers)
-            headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            headers["Access-Control-Max-Age"] = "86400"
+            origin = request_headers.get("Origin")
+            
+            # Helper to set CORS headers
+            def set_cors_headers(headers):
+                if origin:
+                    headers["Access-Control-Allow-Origin"] = origin
+                    headers["Access-Control-Allow-Credentials"] = "true"
+                else:
+                    headers["Access-Control-Allow-Origin"] = "*"
+                
+                allowed_headers = ["Content-Type", "Authorization", self.turn_auth_header_name]
+                headers["Access-Control-Allow-Headers"] = ", ".join(allowed_headers)
+                headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+                headers["Access-Control-Max-Age"] = "86400"
 
-        # Handle CORS preflight OPTIONS requests
-        if request.method == "OPTIONS":
+            # Handle CORS preflight OPTIONS requests
+            if request.method == "OPTIONS":
+                set_cors_headers(response_headers)
+                return self.http_response(http.HTTPStatus.OK, response_headers, b'')
+            
+            # Apply CORS headers to all other requests
             set_cors_headers(response_headers)
-            return self.http_response(http.HTTPStatus.OK, response_headers, b'')
-        
-        # Apply CORS headers to all other requests
-        set_cors_headers(response_headers)
-        
-        # WebSocket paths - пропускаем
-        if path == "/ws/" or path == "/ws" or path.endswith("/signalling/") or path.endswith("/signalling"):
-            return None
+            
+            # WebSocket paths - пропускаем
+            if path == "/ws/" or path == "/ws" or path.endswith("/signalling/") or path.endswith("/signalling"):
+                return None
+        except Exception as e:
+            logger.error(f"Error in process_request: {e}")
+            import traceback
+            traceback.print_exc()
+            raise e
         
         username = ''
         # Basic auth проверка - НО только для не-TURN путей или если включена auth
