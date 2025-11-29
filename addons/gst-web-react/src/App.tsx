@@ -82,8 +82,9 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   const initialDebug = getBoolParam("debug", false) ?? false;
   const initialTurnSwitch = getBoolParam("turnSwitch", false) ?? false;
   const initialResizeRemote = getBoolParam("resizeRemote", true) ?? true;
-  const initialScaleLocalFromStorage = getBoolParam("scaleLocal", null);
-  const initialScaleLocal = initialScaleLocalFromStorage !== null ? initialScaleLocalFromStorage : !initialResizeRemote;
+  // По умолчанию включаем "Scale to fit window"
+  // Если в localStorage нет значения, используем true, иначе используем сохраненное значение
+  const initialScaleLocal = getBoolParam("scaleLocal", true) ?? true;
 
   const videoElementRef = useRef<HTMLVideoElement>(null);
   const audioElementRef = useRef<HTMLAudioElement>(null);
@@ -366,6 +367,30 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
         }
       },
       ondatachannelopen: () => {
+        // Отправляем текущие значения настроек при открытии data channel
+        // Используем небольшую задержку, чтобы убедиться, что канал полностью готов
+        setTimeout(() => {
+          if (webrtc._send_channel && webrtc._send_channel.readyState === 'open') {
+            // Получаем актуальные значения из localStorage или используем текущие state значения
+            const currentVideoBitRate = getIntParam("videoBitRate", videoBitRate) ?? videoBitRate;
+            const currentVideoFramerate = getIntParam("videoFramerate", videoFramerate) ?? videoFramerate;
+            const currentAudioBitRate = getIntParam("audioBitRate", audioBitRate) ?? audioBitRate;
+            const currentResizeRemote = getBoolParam("resizeRemote", resizeRemote) ?? resizeRemote;
+            
+            console.log(`[App] Data channel opened, sending current settings: vb=${currentVideoBitRate}, fps=${currentVideoFramerate}, ab=${currentAudioBitRate}`);
+            webrtc.sendDataChannelMessage(`vb,${currentVideoBitRate}`);
+            webrtc.sendDataChannelMessage(`_arg_fps,${currentVideoFramerate}`);
+            webrtc.sendDataChannelMessage(`ab,${currentAudioBitRate}`);
+            
+            // Отправляем resizeRemote настройку, если нужно
+            if (webrtc.input) {
+              const res = webrtc.input.getWindowResolution();
+              const resStr = `${res[0]}x${res[1]}`;
+              webrtc.sendDataChannelMessage(`_arg_resize,${currentResizeRemote},${resStr}`);
+            }
+          }
+        }, 100);
+        
         if (webrtc.input) {
           webrtc.input.setCallbacks({
             ongamepadconnected: (gamepadId) => {
@@ -385,25 +410,26 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
                 const newRes = `${parseInt(String(res[0]))}x${parseInt(String(res[1]))}`;
                 console.log(`Window size changed: ${res[0]}x${res[1]}, scaled to: ${newRes}`);
                 
-                // Обновляем размер видео элемента на клиенте сразу
                 const videoElement = videoElementRef.current;
-                if (!scaleLocal && resizeRemote) {
-                  // Если scaleLocal отключен и включен resizeRemote, обновляем размер сразу
-                  const pixelRatio = window.devicePixelRatio || 1;
-                  videoElement.style.width = `${res[0] / pixelRatio}px`;
-                  videoElement.style.height = `${res[1] / pixelRatio}px`;
-                  console.log(`Updated video element size to ${res[0] / pixelRatio}x${res[1] / pixelRatio}`);
-                } else if (!scaleLocal) {
-                  // Если scaleLocal отключен, обновляем размер на основе текущего окна
-                  const pixelRatio = window.devicePixelRatio || 1;
-                  videoElement.style.width = `${res[0] / pixelRatio}px`;
-                  videoElement.style.height = `${res[1] / pixelRatio}px`;
+                
+                // Если scaleLocal включен, CSS автоматически масштабирует видео, не нужно менять размер вручную
+                // Обновляем размер видео элемента только если scaleLocal отключен
+                if (!scaleLocal) {
+                  if (resizeRemote) {
+                    // Если scaleLocal отключен и включен resizeRemote, размер будет обновлен сервером через action "resolution"
+                    // Здесь не нужно устанавливать размер, он будет установлен при получении resolution от сервера
+                  } else {
+                    // Если scaleLocal отключен и resizeRemote отключен, обновляем размер на основе локального окна
+                    const pixelRatio = window.devicePixelRatio || 1;
+                    videoElement.style.width = `${res[0] / pixelRatio}px`;
+                    videoElement.style.height = `${res[1] / pixelRatio}px`;
+                  }
                 }
                 
-                // Обновляем курсор scale factor и область ввода
+                // Всегда обновляем курсор scale factor и область ввода
                 if (webrtc.input) {
-                  webrtc.input.getCursorScaleFactor({ remoteResolutionEnabled: resizeRemote });
-                  // Обновляем область ввода после изменения размера видео элемента
+                  webrtc.input.getCursorScaleFactor({ remoteResolutionEnabled: resizeRemote && !scaleLocal });
+                  // Обновляем область ввода после изменения размера окна
                   // Используем небольшую задержку, чтобы браузер успел обновить размеры элемента
                   setTimeout(() => {
                     webrtc.input?.updateWindowMath();
@@ -515,13 +541,24 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
           console.log("received remote resolution of: " + remote_res);
           // Используем setResizeRemote callback чтобы получить актуальное значение
           setResizeRemote(currentResizeRemote => {
-            if (currentResizeRemote) {
+            // Обновляем размер видео элемента только если resizeRemote включен И scaleLocal отключен
+            if (currentResizeRemote && !scaleLocal) {
               const toks = remote_res.split("x");
               const pixelRatio = window.devicePixelRatio || 1; // Защита от 0
               videoElement.style.width = `${parseInt(toks[0]) / pixelRatio}px`;
               videoElement.style.height = `${parseInt(toks[1]) / pixelRatio}px`;
+              console.log(`Updated video element size to remote resolution: ${parseInt(toks[0]) / pixelRatio}x${parseInt(toks[1]) / pixelRatio}`);
               if (webrtc.input) {
                 webrtc.input.getCursorScaleFactor({ remoteResolutionEnabled: true });
+                // Обновляем область ввода после изменения размера
+                setTimeout(() => {
+                  webrtc.input?.updateWindowMath();
+                }, 0);
+              }
+            } else if (scaleLocal) {
+              // Если scaleLocal включен, просто обновляем cursor scale factor без изменения размера
+              if (webrtc.input) {
+                webrtc.input.getCursorScaleFactor({ remoteResolutionEnabled: false });
               }
             }
             return currentResizeRemote;
@@ -642,11 +679,17 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
     const windowRes = webrtc.input.getWindowResolution();
     setWindowResolution(windowRes);
 
-    // Если scaleLocal === false, устанавливаем фиксированные размеры (строка 839-841)
-    if (scaleLocal === false) {
+    // Применяем начальное значение scaleLocal к video элементу
+    if (scaleLocal) {
+      videoElement.style.width = '';
+      videoElement.style.height = '';
+      videoElement.setAttribute("class", "video scale");
+    } else {
+      // Если scaleLocal === false, устанавливаем фиксированные размеры (строка 839-841)
       const pixelRatio = window.devicePixelRatio || 1; // Защита от 0
       videoElement.style.width = `${windowRes[0] / pixelRatio}px`;
       videoElement.style.height = `${windowRes[1] / pixelRatio}px`;
+      videoElement.setAttribute("class", "video");
     }
 
     if (iceServers.length > 0) {
@@ -835,6 +878,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   useEffect(() => {
     if (!initializedRef.current) return;
     if (webrtcRef.current && webrtcRef.current._send_channel && webrtcRef.current._send_channel.readyState === 'open') {
+      console.log(`[App] Sending video bitrate update: vb,${videoBitRate}`);
       webrtcRef.current.sendDataChannelMessage(`vb,${videoBitRate}`);
       setIntParam("videoBitRate", videoBitRate);
     } else {
@@ -845,7 +889,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   useEffect(() => {
     if (!initializedRef.current) return;
     if (webrtcRef.current && webrtcRef.current._send_channel && webrtcRef.current._send_channel.readyState === 'open') {
-      console.log("video framerate changed to " + videoFramerate);
+      console.log(`[App] Sending video framerate update: _arg_fps,${videoFramerate}`);
       webrtcRef.current.sendDataChannelMessage(`_arg_fps,${videoFramerate}`);
       setIntParam("videoFramerate", videoFramerate);
     } else {
@@ -886,6 +930,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   useEffect(() => {
     if (!initializedRef.current) return;
     if (webrtcRef.current && webrtcRef.current._send_channel && webrtcRef.current._send_channel.readyState === 'open') {
+      console.log(`[App] Sending audio bitrate update: ab,${audioBitRate}`);
       webrtcRef.current.sendDataChannelMessage(`ab,${audioBitRate}`);
       setIntParam("audioBitRate", audioBitRate);
     } else {
