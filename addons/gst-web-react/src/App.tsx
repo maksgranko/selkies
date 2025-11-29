@@ -137,6 +137,8 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   const audioConnectedRef = useRef<string>('');
   const statWatchEnabledRef = useRef<boolean>(false);
   const connectionStatusRef = useRef<'connecting' | 'connected' | 'failed' | 'checkconnect'>('connecting');
+  const lastReloadTimeRef = useRef<number>(0);
+  const RELOAD_COOLDOWN_MS = 3000; // 5 секунд задержка между перезагрузками
 
   // Функция для добавления временной метки к логам
   const applyTimestamp = useCallback((msg: string): string => {
@@ -868,82 +870,114 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
     if (!initializedRef.current) return;
     setBoolParam("turnSwitch", turnSwitch);
     
-    // Никогда не перезагружаем, если соединение активно или находится в процессе установки
     const currentStatus = connectionStatusRef.current;
     const peerConnectionState = webrtcRef.current?.peerConnection?.connectionState;
+    const isConnectionActive = currentStatus === 'checkconnect' || currentStatus === 'connected' || 
+                               peerConnectionState === 'connected' || peerConnectionState === 'connecting';
     
-    // Проверяем состояние соединения через ref (актуальное значение)
-    if (currentStatus === 'checkconnect' || currentStatus === 'connected' || 
-        peerConnectionState === 'connected' || peerConnectionState === 'connecting') {
-      console.log(`[App] Skipping reload for turnSwitch change - connection is ${currentStatus} (peerConnection: ${peerConnectionState})`);
+    // Если соединение активно, обновляем конфигурацию динамически вместо перезагрузки
+    if (isConnectionActive && webrtcRef.current?.peerConnection) {
+      console.log(`[App] Updating turnSwitch dynamically - connection is active (status: ${currentStatus}, peerConnection: ${peerConnectionState})`);
+      
+      // Обновляем forceTurn флаг
+      if (webrtcRef.current) {
+        webrtcRef.current.forceTurn = turnSwitch;
+      }
+      if (audioWebrtcRef.current) {
+        audioWebrtcRef.current.forceTurn = turnSwitch;
+      }
+      
+      // Обновляем конфигурацию peerConnection динамически
+      try {
+        const config = webrtcRef.current.peerConnection.getConfiguration();
+        config.iceTransportPolicy = turnSwitch ? 'relay' : 'all';
+        webrtcRef.current.peerConnection.setConfiguration(config);
+        
+        if (audioWebrtcRef.current?.peerConnection) {
+          const audioConfig = audioWebrtcRef.current.peerConnection.getConfiguration();
+          audioConfig.iceTransportPolicy = turnSwitch ? 'relay' : 'all';
+          audioWebrtcRef.current.peerConnection.setConfiguration(audioConfig);
+        }
+        
+        console.log(`[App] Successfully updated iceTransportPolicy to ${turnSwitch ? 'relay' : 'all'}`);
+      } catch (error) {
+        console.warn(`[App] Failed to update iceTransportPolicy dynamically: ${error}`);
+      }
       return;
     }
     
-    // Если нет peerConnection, можно безопасно перезагрузить
+    // Если соединение не активно, проверяем cooldown перед перезагрузкой
+    const now = Date.now();
+    const timeSinceLastReload = now - lastReloadTimeRef.current;
+    
+    if (timeSinceLastReload < RELOAD_COOLDOWN_MS) {
+      const remainingTime = Math.ceil((RELOAD_COOLDOWN_MS - timeSinceLastReload) / 1000);
+      console.log(`[App] Skipping reload for turnSwitch - cooldown active (${remainingTime}s remaining)`);
+      return;
+    }
+    
+    // Если нет peerConnection, можно безопасно перезагрузить (но только после cooldown)
     if (!webrtcRef.current || !webrtcRef.current.peerConnection) {
-      console.log(`[App] Reloading page due to turnSwitch change - no active connection`);
+      console.log(`[App] Scheduling reload for turnSwitch change - no active connection`);
       setTimeout(() => {
+        // Проверяем еще раз перед перезагрузкой
+        const statusBeforeReload = connectionStatusRef.current;
+        const peerStateBeforeReload = webrtcRef.current?.peerConnection?.connectionState;
+        const isStillInactive = statusBeforeReload !== 'checkconnect' && statusBeforeReload !== 'connected' && 
+                                peerStateBeforeReload !== 'connected' && peerStateBeforeReload !== 'connecting';
+        
+        if (!isStillInactive) {
+          console.log(`[App] Cancelling reload for turnSwitch - connection became active`);
+          return;
+        }
+        
+        lastReloadTimeRef.current = Date.now();
+        console.log(`[App] Reloading page due to turnSwitch change`);
         document.location.reload();
-      }, 700);
+      }, RELOAD_COOLDOWN_MS);
       return;
     }
     
-    // Перезагружаем только если соединение действительно неактивно
+    // Перезагружаем только если соединение действительно неактивно и прошел cooldown
     setTimeout(() => {
-      // Проверяем еще раз перед перезагрузкой через ref (актуальное значение)
       const statusBeforeReload = connectionStatusRef.current;
       const peerStateBeforeReload = webrtcRef.current?.peerConnection?.connectionState;
+      const isStillInactive = statusBeforeReload !== 'checkconnect' && statusBeforeReload !== 'connected' && 
+                              peerStateBeforeReload !== 'connected' && peerStateBeforeReload !== 'connecting';
       
-      if (statusBeforeReload === 'checkconnect' || statusBeforeReload === 'connected' || 
-          peerStateBeforeReload === 'connected' || peerStateBeforeReload === 'connecting') {
-        console.log(`[App] Cancelling reload for turnSwitch - connection became active (status: ${statusBeforeReload}, peerConnection: ${peerStateBeforeReload})`);
+      if (!isStillInactive) {
+        console.log(`[App] Cancelling reload for turnSwitch - connection became active`);
         return;
       }
       
+      const nowBeforeReload = Date.now();
+      const timeSinceLastReloadCheck = nowBeforeReload - lastReloadTimeRef.current;
+      
+      if (timeSinceLastReloadCheck < RELOAD_COOLDOWN_MS) {
+        console.log(`[App] Cancelling reload for turnSwitch - cooldown still active`);
+        return;
+      }
+      
+      lastReloadTimeRef.current = nowBeforeReload;
       console.log(`[App] Reloading page due to turnSwitch change`);
       document.location.reload();
-    }, 700);
+    }, RELOAD_COOLDOWN_MS);
   }, [turnSwitch]);
 
   useEffect(() => {
     if (!initializedRef.current) return;
     setBoolParam("debug", debug);
     
-    // Никогда не перезагружаем, если соединение активно или находится в процессе установки
-    const currentStatus = connectionStatusRef.current;
-    const peerConnectionState = webrtcRef.current?.peerConnection?.connectionState;
+    // Debug не требует перезагрузки страницы - это просто включение/выключение логов
+    // Логи обрабатываются через callbacks, которые уже установлены
+    console.log(`[App] Debug mode changed to ${debug} - no reload needed`);
     
-    // Проверяем состояние соединения через ref (актуальное значение)
-    if (currentStatus === 'connecting' || currentStatus === 'checkconnect' || currentStatus === 'connected' || 
-        peerConnectionState === 'connected' || peerConnectionState === 'connecting') {
-      console.log(`[App] Skipping reload for debug change - connection is ${currentStatus} (peerConnection: ${peerConnectionState})`);
+    // Если соединение установлено, просто обновляем callbacks
+    if (webrtcRef.current && webrtcRef.current.peerConnection) {
+      // Callbacks для debug уже настроены через условную логику в основном useEffect
+      // Ничего дополнительного делать не нужно
       return;
     }
-    
-    // Если нет peerConnection, можно безопасно перезагрузить
-    if (!webrtcRef.current || !webrtcRef.current.peerConnection) {
-      console.log(`[App] Reloading page due to debug change - no active connection`);
-      setTimeout(() => {
-        document.location.reload();
-      }, 700);
-      return;
-    }
-    
-    // Перезагружаем только если соединение действительно неактивно
-    setTimeout(() => {
-      // Проверяем еще раз перед перезагрузкой через ref (актуальное значение)
-      const statusBeforeReload = connectionStatusRef.current;
-      const peerStateBeforeReload = webrtcRef.current?.peerConnection?.connectionState;
-      
-      if (statusBeforeReload === 'connecting' || statusBeforeReload === 'checkconnect' || statusBeforeReload === 'connected' || 
-          peerStateBeforeReload === 'connected' || peerStateBeforeReload === 'connecting') {
-        console.log(`[App] Cancelling reload for debug - connection became active (status: ${statusBeforeReload}, peerConnection: ${peerStateBeforeReload})`);
-        return;
-      }
-      
-      console.log(`[App] Reloading page due to debug change`);
-      document.location.reload();
-    }, 700);
   }, [debug]);
 
   useEffect(() => {
@@ -1172,8 +1206,8 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
           </div>
         ) : (
           <div>
-            {/* Показываем спиннер только если видео не играет И (соединение не установлено ИЛИ требуется запуск) */}
-            {!isVideoPlaying && (status !== 'connected' || showStart) && (
+            {/* Показываем спиннер только если видео не играет И соединение не установлено И кнопка Start не показывается */}
+            {!isVideoPlaying && status !== 'connected' && !showStart && (
               <>
                 <div className="spinner"></div>
                 <div className="loading-text">{loadingText || 'Connecting...'}</div>
@@ -1183,7 +1217,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
             {status === 'connected' && showStart && !isVideoPlaying && (
               <button onClick={handlePlayStream}>Start</button>
             )}
-            {/* Спиннер автоматически скрывается когда видео играет (isVideoPlaying === true) */}
+            {/* Спиннер автоматически скрывается когда видео играет (isVideoPlaying === true) или показывается кнопка Start */}
           </div>
         )}
       </div>

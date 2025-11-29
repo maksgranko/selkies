@@ -83,7 +83,6 @@ export class WebRTCDemoSignalling {
   };
 
   private onServerError = (): void => {
-    this.setStatus("Connection error, retry in 3 seconds.");
     this.setDebug(`WebSocket error occurred. retry_count: ${this.retry_count}, wasConnected: ${this.wasConnected}, state: ${this.state}, isReloading: ${this.isReloading}`);
     
     // Проверяем существование соединения перед проверкой состояния
@@ -123,12 +122,25 @@ export class WebRTCDemoSignalling {
     this.retry_count++;
     this.setDebug(`Incremented retry_count to ${this.retry_count}`);
     
-    if (this.ws_conn.readyState === WebSocket.CLOSED) {
+    // Показываем сообщение об ошибке только если действительно будем пытаться переподключиться
+    const willRetry = this.ws_conn.readyState === WebSocket.CLOSED || this.ws_conn.readyState === WebSocket.CLOSING;
+    
+    if (willRetry) {
+      this.setStatus("Connection error, retry in 3 seconds.");
+      
+      // Ждём 3 секунды перед следующей попыткой
       setTimeout(() => {
-        // Проверяем еще раз перед перезагрузкой - если соединение активно, отменяем перезагрузку
+        // Проверяем еще раз перед действием - если соединение активно, отменяем
         if (this.ws_conn && this.ws_conn.readyState === WebSocket.OPEN) {
-          this.setDebug("Connection was established during retry delay, cancelling reload");
+          this.setDebug("Connection was established during retry delay, cancelling retry");
+          this.setStatus("Connection restored.");
           this.retry_count = 0;
+          return;
+        }
+
+        // Проверяем, не началась ли уже перезагрузка
+        if (this.isReloading) {
+          this.setDebug("Reload already in progress, skipping retry");
           return;
         }
 
@@ -136,6 +148,7 @@ export class WebRTCDemoSignalling {
           if (!this.isReloading) {
             this.isReloading = true;
             this.setError(`Max retry count (${this.retry_count}) exceeded, reloading page`);
+            this.setStatus("Reloading page...");
             window.location.reload();
           }
         } else {
@@ -236,6 +249,22 @@ export class WebRTCDemoSignalling {
    * Инициирует подключение к signalling серверу
    */
   connect(): void {
+    // Проверяем, не подключены ли уже
+    if (this.ws_conn && (this.ws_conn.readyState === WebSocket.OPEN || this.ws_conn.readyState === WebSocket.CONNECTING)) {
+      this.setDebug(`Skipping connect - WebSocket already ${this.ws_conn.readyState === WebSocket.OPEN ? 'open' : 'connecting'}`);
+      return;
+    }
+    
+    // Закрываем старое соединение если оно есть
+    if (this.ws_conn && this.ws_conn.readyState !== WebSocket.CLOSED) {
+      this.setDebug('Closing existing WebSocket before creating new connection');
+      try {
+        this.ws_conn.close();
+      } catch (e) {
+        this.setDebug(`Error closing existing WebSocket: ${e}`);
+      }
+    }
+    
     this.state = 'connecting';
     this.setStatus("Connecting to server.");
 
