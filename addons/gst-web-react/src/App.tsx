@@ -379,11 +379,38 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
               setShowDrawer(prev => !prev);
             },
             onresizeend: () => {
-              if (webrtc.input) {
+              if (webrtc.input && videoElementRef.current) {
                 const res = webrtc.input.getWindowResolution();
                 setWindowResolution(res);
                 const newRes = `${parseInt(String(res[0]))}x${parseInt(String(res[1]))}`;
                 console.log(`Window size changed: ${res[0]}x${res[1]}, scaled to: ${newRes}`);
+                
+                // Обновляем размер видео элемента на клиенте сразу
+                const videoElement = videoElementRef.current;
+                if (!scaleLocal && resizeRemote) {
+                  // Если scaleLocal отключен и включен resizeRemote, обновляем размер сразу
+                  const pixelRatio = window.devicePixelRatio || 1;
+                  videoElement.style.width = `${res[0] / pixelRatio}px`;
+                  videoElement.style.height = `${res[1] / pixelRatio}px`;
+                  console.log(`Updated video element size to ${res[0] / pixelRatio}x${res[1] / pixelRatio}`);
+                } else if (!scaleLocal) {
+                  // Если scaleLocal отключен, обновляем размер на основе текущего окна
+                  const pixelRatio = window.devicePixelRatio || 1;
+                  videoElement.style.width = `${res[0] / pixelRatio}px`;
+                  videoElement.style.height = `${res[1] / pixelRatio}px`;
+                }
+                
+                // Обновляем курсор scale factor и область ввода
+                if (webrtc.input) {
+                  webrtc.input.getCursorScaleFactor({ remoteResolutionEnabled: resizeRemote });
+                  // Обновляем область ввода после изменения размера видео элемента
+                  // Используем небольшую задержку, чтобы браузер успел обновить размеры элемента
+                  setTimeout(() => {
+                    webrtc.input?.updateWindowMath();
+                  }, 0);
+                }
+                
+                // Отправляем новое разрешение на сервер
                 webrtc.sendDataChannelMessage(`r,${newRes}`);
                 webrtc.sendDataChannelMessage(`s,${window.devicePixelRatio}`);
               }

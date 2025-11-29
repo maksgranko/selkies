@@ -748,6 +748,17 @@ export class Input {
     ];
   }
 
+  /**
+   * Принудительно обновляет математику окна (область ввода) после изменения размера
+   * Используется когда размер видео элемента изменяется программно
+   */
+  updateWindowMath(): void {
+    // Используем requestAnimationFrame для обновления после того, как браузер обновит размеры
+    requestAnimationFrame(() => {
+      this.windowMath();
+    });
+  }
+
   private addListener(target: EventTarget, event: string, handler: EventListener): void {
     target.addEventListener(event, handler);
     this.listeners.push([target, event, handler]);
