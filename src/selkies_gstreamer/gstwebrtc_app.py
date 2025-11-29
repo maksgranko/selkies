@@ -1302,8 +1302,10 @@ class GSTWebRTCApp:
         """
 
         if self.pipeline:
+            logger.debug("set_video_bitrate called with bitrate=%d kbps, pipeline exists" % bitrate)
             # Prevent bitrate from overshooting because of FEC
             fec_bitrate_kbps = int(bitrate / (1.0 + (self.video_packetloss_percent / 100.0)))
+            logger.debug("fec_bitrate_kbps calculated: %d kbps" % fec_bitrate_kbps)
             # Convert to bps for encoders that expect bps (some encoders expect kbps, see below)
             fec_bitrate_bps = fec_bitrate_kbps * 1000
             # Change bitrate range of congestion control element
@@ -1325,9 +1327,12 @@ class GSTWebRTCApp:
                 else:
                     if not cc:
                         # vbv-buffer-size expects kbits
-                        element.set_property("vbv-buffer-size", int((fec_bitrate_kbps + self.framerate - 1) // self.framerate * self.vbv_multiplier_nv))
+                        vbv_size = int((fec_bitrate_kbps + self.framerate - 1) // self.framerate * self.vbv_multiplier_nv)
+                        element.set_property("vbv-buffer-size", vbv_size)
+                        logger.debug("Set vbv-buffer-size to %d kbits for NVENC" % vbv_size)
                     # NVENC bitrate property expects kbps (matches initialization at line 306)
                     element.set_property("bitrate", fec_bitrate_kbps)
+                    logger.info("Set NVENC bitrate to %d kbps (fec_bitrate_kbps: %d)" % (bitrate, fec_bitrate_kbps))
             elif self.encoder.startswith("va"):
                 element = Gst.Bin.get_by_name(self.pipeline, "vaenc")
                 if element is None:
@@ -1389,18 +1394,22 @@ class GSTWebRTCApp:
                     element.set_property("bitrate", fec_bitrate_bps)
             else:
                 logger.warning("set_video_bitrate not supported with encoder: %s" % self.encoder)
+        else:
+            logger.warning("set_video_bitrate called but pipeline is None or not initialized")
 
-            if not cc:
-                logger.info("video bitrate set to: %d" % bitrate)
-            else:
-                logger.debug("video bitrate set with congestion control to: %d" % bitrate)
+        # Update stored values regardless of pipeline state
+        if not cc:
+            logger.info("video bitrate set to: %d" % bitrate)
+        else:
+            logger.debug("video bitrate set with congestion control to: %d" % bitrate)
 
-            self.video_bitrate = bitrate
+        self.video_bitrate = bitrate
+        if self.pipeline:
             self.fec_video_bitrate = fec_bitrate_kbps
 
-            if not cc:
-                self.__send_data_channel_message(
-                    "pipeline", {"status": "Video bitrate set to: %d" % bitrate})
+        if not cc and self.pipeline:
+            self.__send_data_channel_message(
+                "pipeline", {"status": "Video bitrate set to: %d" % bitrate})
 
     def set_audio_bitrate(self, bitrate):
         """Set Opus encoder target bitrate in bps

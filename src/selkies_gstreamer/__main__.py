@@ -309,21 +309,26 @@ def set_json_app_argument(config_path, key, value):
         value {any} -- the value of the argument to set
     """
 
-    if not os.path.exists(config_path):
-        # Create new file
-        with open(config_path, 'w') as f:
-            json.dump({}, f)
-
-    # Read current config JSON
-    with open(config_path, 'w') as f:
-        json_data = json.load(f)
+    # Read current config JSON or create new dict
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                json_data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            json_data = {}
+    else:
+        json_data = {}
 
     # Set the new value for the argument
     json_data[key] = value
 
     # Save the json file
-    with open(config_path, 'w') as f:
-        json.dump(json_data, f)
+    try:
+        with open(config_path, 'w') as f:
+            json.dump(json_data, f)
+    except IOError:
+        logger.warning("Failed to write to json config file: %s" % config_path)
+        return False
 
     return True
 
@@ -748,10 +753,20 @@ async def main():
 
     # Send video bitrate messages to app
     # Client sends video bitrate in kbps, pass directly to set_video_bitrate() which expects kbps
-    webrtc_input.on_video_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "video_bitrate", bitrate) and (app.set_video_bitrate(int(bitrate)))
+    def on_video_bitrate(bitrate):
+        logger.info("Received video bitrate change request: %d kbps" % bitrate)
+        set_json_app_argument(args.json_config, "video_bitrate", bitrate)
+        app.set_video_bitrate(int(bitrate))
+        logger.info("Video bitrate change request processed")
+    webrtc_input.on_video_encoder_bit_rate = on_video_bitrate
 
     # Send audio bitrate messages to app
-    webrtc_input.on_audio_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "audio_bitrate", bitrate) and audio_app.set_audio_bitrate(int(bitrate))
+    def on_audio_bitrate(bitrate):
+        logger.info("Received audio bitrate change request: %d bps" % bitrate)
+        set_json_app_argument(args.json_config, "audio_bitrate", bitrate)
+        audio_app.set_audio_bitrate(int(bitrate))
+        logger.info("Audio bitrate change request processed")
+    webrtc_input.on_audio_encoder_bit_rate = on_audio_bitrate
 
     # Send pointer visibility setting to app
     webrtc_input.on_mouse_pointer_visible = lambda visible: app.set_pointer_visible(
