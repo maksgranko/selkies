@@ -2637,7 +2637,7 @@
         "kind": 5,
         "importPath": "src.selkies_gstreamer.signalling_web",
         "description": "src.selkies_gstreamer.signalling_web",
-        "peekOfCode": "logger = logging.getLogger(\"signaling\")\nweb_logger = logging.getLogger(\"web\")\n# websockets logs an error if a connection is opened and closed before any data is sent.\n# The client seems to do same thing, causing an inital handshake error.\nlogging.getLogger(\"websockets\").setLevel(logging.CRITICAL)\nMIME_TYPES = {\n    \"html\": \"text/html\",\n    \"js\": \"text/javascript\",\n    \"css\": \"text/css\",\n    \"ico\": \"image/x-icon\"",
+        "peekOfCode": "logger = logging.getLogger(\"signaling\")\nweb_logger = logging.getLogger(\"web\")\n# websockets logs an error if a connection is opened and closed before any data is sent.\n# The client seems to do same thing, causing an inital handshake error.\n# logging.getLogger(\"websockets\").setLevel(logging.CRITICAL)\nMIME_TYPES = {\n    \"html\": \"text/html\",\n    \"js\": \"text/javascript\",\n    \"css\": \"text/css\",\n    \"ico\": \"image/x-icon\"",
         "detail": "src.selkies_gstreamer.signalling_web",
         "documentation": {}
     },
@@ -2646,7 +2646,7 @@
         "kind": 5,
         "importPath": "src.selkies_gstreamer.signalling_web",
         "description": "src.selkies_gstreamer.signalling_web",
-        "peekOfCode": "web_logger = logging.getLogger(\"web\")\n# websockets logs an error if a connection is opened and closed before any data is sent.\n# The client seems to do same thing, causing an inital handshake error.\nlogging.getLogger(\"websockets\").setLevel(logging.CRITICAL)\nMIME_TYPES = {\n    \"html\": \"text/html\",\n    \"js\": \"text/javascript\",\n    \"css\": \"text/css\",\n    \"ico\": \"image/x-icon\"\n}",
+        "peekOfCode": "web_logger = logging.getLogger(\"web\")\n# websockets logs an error if a connection is opened and closed before any data is sent.\n# The client seems to do same thing, causing an inital handshake error.\n# logging.getLogger(\"websockets\").setLevel(logging.CRITICAL)\nMIME_TYPES = {\n    \"html\": \"text/html\",\n    \"js\": \"text/javascript\",\n    \"css\": \"text/css\",\n    \"ico\": \"image/x-icon\"\n}",
         "detail": "src.selkies_gstreamer.signalling_web",
         "documentation": {}
     },
@@ -2916,7 +2916,7 @@
         "kind": 5,
         "importPath": "web",
         "description": "web",
-        "peekOfCode": "app = web.Application(middlewares=[cors_middleware])\napp.router.add_get(\"/ws\", websocket_handler)\napp.router.add_get(\"/turn\", turn_handler)\n# Serve static files\ncurrent_path = pathlib.Path(__file__).parent\nstatic_path = current_path / \"static\"\nprint(static_path)\napp.router.add_static(\"/\", path=static_path, name=\"static\")\nif __name__ == '__main__':\n    # Parse command-line arguments",
+        "peekOfCode": "app = web.Application(middlewares=[cors_middleware])\n# Add handler for specific signalling path used by frontend/client\n# Pattern: /{app_name}/signalling/\napp.router.add_get(\"/{app_name}/signalling/\", websocket_handler)\napp.router.add_get(\"/ws\", websocket_handler)\napp.router.add_get(\"/\", index_handler)\n# Serve static files - MUST be last to avoid shadowing other routes\ncurrent_path = pathlib.Path(__file__).parent\nstatic_path = current_path / \"static\"\nif static_path.exists():",
         "detail": "web",
         "documentation": {}
     },
@@ -2925,7 +2925,7 @@
         "kind": 5,
         "importPath": "web",
         "description": "web",
-        "peekOfCode": "current_path = pathlib.Path(__file__).parent\nstatic_path = current_path / \"static\"\nprint(static_path)\napp.router.add_static(\"/\", path=static_path, name=\"static\")\nif __name__ == '__main__':\n    # Parse command-line arguments\n    parser = argparse.ArgumentParser(description='Run WebSocket server')\n    parser.add_argument('--port', type=int, default=8080, \n                        help='Port to run the server on (default: 8080)')\n    args = parser.parse_args()",
+        "peekOfCode": "current_path = pathlib.Path(__file__).parent\nstatic_path = current_path / \"static\"\nif static_path.exists():\n    print(f\"Serving static files from: {static_path}\")\n    app.router.add_static(\"/\", path=static_path, name=\"static\")\nelse:\n    print(f\"Warning: Static directory not found at {static_path}\")\nif __name__ == '__main__':\n    # Parse command-line arguments\n    parser = argparse.ArgumentParser(description='Run WebSocket server')",
         "detail": "web",
         "documentation": {}
     },
@@ -2934,7 +2934,7 @@
         "kind": 5,
         "importPath": "web",
         "description": "web",
-        "peekOfCode": "static_path = current_path / \"static\"\nprint(static_path)\napp.router.add_static(\"/\", path=static_path, name=\"static\")\nif __name__ == '__main__':\n    # Parse command-line arguments\n    parser = argparse.ArgumentParser(description='Run WebSocket server')\n    parser.add_argument('--port', type=int, default=8080, \n                        help='Port to run the server on (default: 8080)')\n    args = parser.parse_args()\n    web.run_app(app, port=args.port)",
+        "peekOfCode": "static_path = current_path / \"static\"\nif static_path.exists():\n    print(f\"Serving static files from: {static_path}\")\n    app.router.add_static(\"/\", path=static_path, name=\"static\")\nelse:\n    print(f\"Warning: Static directory not found at {static_path}\")\nif __name__ == '__main__':\n    # Parse command-line arguments\n    parser = argparse.ArgumentParser(description='Run WebSocket server')\n    parser.add_argument('--port', type=int, default=8080, ",
         "detail": "web",
         "documentation": {}
     }

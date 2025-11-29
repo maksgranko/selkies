@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { WebRTCDemo } from './webrtc';
 import { WebRTCDemoSignalling } from './signalling';
 import { ConnectionConfig, getConnectionConfig, createSignallingUrl } from './config';
@@ -55,9 +55,12 @@ interface GamepadState {
 }
 
 const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
-  // Получаем конфигурацию подключения СРАЗУ
-  const config = connectionConfig || getConnectionConfig(appConfig);
-  console.log('[App] Using connection config:', config);
+  // Получаем конфигурацию подключения СРАЗУ и мемоизируем, чтобы избежать перерендеров
+  const config = useMemo(() => {
+    const cfg = connectionConfig || getConnectionConfig(appConfig);
+    console.log('[App] Using connection config:', cfg);
+    return cfg;
+  }, [connectionConfig, appConfig]);
 
   // Функции для работы с localStorage - определяем ДО использования
   const getIntParam = (key: string, defaultValue: number | null): number | null => {
@@ -727,6 +730,8 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
     if (webrtcRef.current && webrtcRef.current._send_channel && webrtcRef.current._send_channel.readyState === 'open') {
       webrtcRef.current.sendDataChannelMessage(`vb,${videoBitRate}`);
       setIntParam("videoBitRate", videoBitRate);
+    } else {
+      console.log(`[App] Skipping videoBitRate update - data channel not open (readyState: ${webrtcRef.current?._send_channel?.readyState || 'null'})`);
     }
   }, [videoBitRate]);
 
@@ -736,6 +741,8 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
       console.log("video framerate changed to " + videoFramerate);
       webrtcRef.current.sendDataChannelMessage(`_arg_fps,${videoFramerate}`);
       setIntParam("videoFramerate", videoFramerate);
+    } else {
+      console.log(`[App] Skipping videoFramerate update - data channel not open (readyState: ${webrtcRef.current?._send_channel?.readyState || 'null'})`);
     }
   }, [videoFramerate]);
 
@@ -748,6 +755,8 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
       const resStr = `${res[0]}x${res[1]}`;
       webrtcRef.current.sendDataChannelMessage(`_arg_resize,${resizeRemote},${resStr}`);
       setBoolParam("resizeRemote", resizeRemote);
+    } else {
+      console.log(`[App] Skipping resizeRemote update - data channel not open (readyState: ${webrtcRef.current?._send_channel?.readyState || 'null'})`);
     }
   }, [resizeRemote]);
 
@@ -772,28 +781,72 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
     if (webrtcRef.current && webrtcRef.current._send_channel && webrtcRef.current._send_channel.readyState === 'open') {
       webrtcRef.current.sendDataChannelMessage(`ab,${audioBitRate}`);
       setIntParam("audioBitRate", audioBitRate);
+    } else {
+      console.log(`[App] Skipping audioBitRate update - data channel not open (readyState: ${webrtcRef.current?._send_channel?.readyState || 'null'})`);
     }
   }, [audioBitRate]);
 
   useEffect(() => {
     if (!initializedRef.current) return;
     setBoolParam("turnSwitch", turnSwitch);
+    // Не перезагружаем, если соединение активно или находится в процессе установки
     if (webrtcRef.current && webrtcRef.current.peerConnection !== null) {
+      // Проверяем состояние соединения перед перезагрузкой
+      const currentStatus = status;
+      // Никогда не перезагружаем, если соединение активно или устанавливается
+      if (currentStatus === 'checkconnect' || currentStatus === 'connected') {
+        console.log(`[App] Skipping reload for turnSwitch change - connection is ${currentStatus}`);
+        return;
+      }
+      // Перезагружаем только если соединение действительно неактивно (failed или disconnected)
       setTimeout(() => {
+        // Проверяем еще раз перед перезагрузкой - если соединение стало активным, отменяем
+        if (status === 'checkconnect' || status === 'connected') {
+          console.log(`[App] Cancelling reload for turnSwitch - connection state changed to ${status}`);
+          return;
+        }
+        // Проверяем, что соединение действительно закрыто
+        if (webrtcRef.current?.peerConnection?.connectionState === 'connected' || 
+            webrtcRef.current?.peerConnection?.connectionState === 'connecting') {
+          console.log(`[App] Cancelling reload for turnSwitch - peerConnection is ${webrtcRef.current.peerConnection.connectionState}`);
+          return;
+        }
+        console.log(`[App] Reloading page due to turnSwitch change`);
         document.location.reload();
       }, 700);
     }
-  }, [turnSwitch]);
+  }, [turnSwitch, status]);
 
   useEffect(() => {
     if (!initializedRef.current) return;
     setBoolParam("debug", debug);
+    // Не перезагружаем, если соединение активно или находится в процессе установки
     if (webrtcRef.current && webrtcRef.current.peerConnection !== null) {
+      // Проверяем состояние соединения перед перезагрузкой
+      const currentStatus = status;
+      // Никогда не перезагружаем, если соединение активно или устанавливается
+      if (currentStatus === 'connecting' || currentStatus === 'checkconnect' || currentStatus === 'connected') {
+        console.log(`[App] Skipping reload for debug change - connection is ${currentStatus}`);
+        return;
+      }
+      // Перезагружаем только если соединение действительно неактивно (failed или disconnected)
       setTimeout(() => {
+        // Проверяем еще раз перед перезагрузкой - если соединение стало активным, отменяем
+        if (status === 'connecting' || status === 'checkconnect' || status === 'connected') {
+          console.log(`[App] Cancelling reload for debug - connection state changed to ${status}`);
+          return;
+        }
+        // Проверяем, что соединение действительно закрыто
+        if (webrtcRef.current?.peerConnection?.connectionState === 'connected' || 
+            webrtcRef.current?.peerConnection?.connectionState === 'connecting') {
+          console.log(`[App] Cancelling reload for debug - peerConnection is ${webrtcRef.current.peerConnection.connectionState}`);
+          return;
+        }
+        console.log(`[App] Reloading page due to debug change`);
         document.location.reload();
       }, 700);
     }
-  }, [debug]);
+  }, [debug, status]);
 
   useEffect(() => {
     if (showDrawer && webrtcRef.current?.input) {

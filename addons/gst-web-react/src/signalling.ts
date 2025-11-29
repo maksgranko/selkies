@@ -19,6 +19,9 @@ export class WebRTCDemoSignalling {
   private callbacks: SignallingCallbacks = {};
   public state: 'disconnected' | 'connecting' | 'connected' = 'disconnected';
   private retry_count: number = 0;
+  private wasConnected: boolean = false;
+  private lastConnectedTime: number = 0;
+  private isReloading: boolean = false;
   private getWindowResolution?: () => [number, number];
 
   constructor(server: URL, getWindowResolution?: () => [number, number]) {
@@ -68,24 +71,80 @@ export class WebRTCDemoSignalling {
       scale: window.devicePixelRatio
     };
     this.state = 'connected';
+    this.wasConnected = true;
+    this.lastConnectedTime = Date.now();
+    this.retry_count = 0;
+    this.isReloading = false; // Сбрасываем флаг перезагрузки при успешном подключении
     if (this.ws_conn) {
       this.ws_conn.send(`HELLO ${this.peer_id} ${btoa(JSON.stringify(meta))}`);
     }
     this.setStatus(`Registering with server, peer ID: ${this.peer_id}`);
-    this.retry_count = 0;
+    this.setDebug(`Connection opened successfully at ${new Date(this.lastConnectedTime).toISOString()}`);
   };
 
   private onServerError = (): void => {
     this.setStatus("Connection error, retry in 3 seconds.");
+    this.setDebug(`WebSocket error occurred. retry_count: ${this.retry_count}, wasConnected: ${this.wasConnected}, state: ${this.state}, isReloading: ${this.isReloading}`);
+    
+    // Проверяем существование соединения перед проверкой состояния
+    if (!this.ws_conn) {
+      this.setDebug("WebSocket connection is null, skipping error handling");
+      return;
+    }
+
+    // Если уже идет перезагрузка, не обрабатываем ошибку
+    if (this.isReloading) {
+      this.setDebug("Page reload already in progress, skipping error handling");
+      return;
+    }
+
+    // Если соединение в процессе открытия, не увеличиваем счетчик
+    if (this.state === 'connecting') {
+      this.setDebug("Connection is in 'connecting' state, not incrementing retry_count");
+      return;
+    }
+
+    // Проверяем, было ли соединение успешно установлено недавно (в течение последних 10 секунд)
+    // Если да, и соединение все еще активно, не увеличиваем счетчик
+    const timeSinceLastConnection = Date.now() - this.lastConnectedTime;
+    const recentlyConnected = this.wasConnected && timeSinceLastConnection < 10000; // 10 секунд
+    const isConnectionActive = this.ws_conn && this.ws_conn.readyState === WebSocket.OPEN;
+    
+    if (recentlyConnected && isConnectionActive) {
+      this.setDebug(`Connection was established recently (${Math.round(timeSinceLastConnection / 1000)}s ago) and is still active, not incrementing retry_count`);
+      // Сбрасываем счетчик, так как соединение активно
+      this.retry_count = 0;
+      return;
+    }
+
+    // Если соединение было установлено, но сейчас закрыто и не может переподключиться,
+    // нужно позволить увеличить счетчик и перезагрузить страницу после 3 попыток
+
     this.retry_count++;
-    if (this.ws_conn && this.ws_conn.readyState === WebSocket.CLOSED) {
+    this.setDebug(`Incremented retry_count to ${this.retry_count}`);
+    
+    if (this.ws_conn.readyState === WebSocket.CLOSED) {
       setTimeout(() => {
+        // Проверяем еще раз перед перезагрузкой - если соединение активно, отменяем перезагрузку
+        if (this.ws_conn && this.ws_conn.readyState === WebSocket.OPEN) {
+          this.setDebug("Connection was established during retry delay, cancelling reload");
+          this.retry_count = 0;
+          return;
+        }
+
         if (this.retry_count > 3) {
-          window.location.reload();
+          if (!this.isReloading) {
+            this.isReloading = true;
+            this.setError(`Max retry count (${this.retry_count}) exceeded, reloading page`);
+            window.location.reload();
+          }
         } else {
+          this.setDebug(`Retrying connection (attempt ${this.retry_count}/3)`);
           this.connect();
         }
       }, 3000);
+    } else {
+      this.setDebug(`WebSocket is not closed (readyState: ${this.ws_conn.readyState}), skipping retry`);
     }
   };
 
@@ -126,13 +185,50 @@ export class WebRTCDemoSignalling {
     }
   };
 
-  private onServerClose = (): void => {
+  private onServerClose = (event: CloseEvent): void => {
+    const closeCode = event.code;
+    const wasNormalClose = closeCode === 1000; // Normal closure
+    const isProtocolError = closeCode === 1002; // Protocol error
+    
+    this.setDebug(`WebSocket closed. Code: ${closeCode}, wasConnected: ${this.wasConnected}, state: ${this.state}`);
+    
     if (this.state !== 'connecting') {
       this.state = 'disconnected';
-      this.setError("Server closed connection.");
+      
+      // Не вызываем ondisconnect для нормального закрытия или если соединение никогда не было установлено
+      if (wasNormalClose) {
+        this.setDebug("Normal closure (code 1000), not calling ondisconnect");
+        return;
+      }
+      
+      if (!this.wasConnected) {
+        this.setDebug("Connection was never successfully established, not calling ondisconnect");
+        return;
+      }
+      
+      // Для кода 1002 (Protocol error) проверяем, было ли соединение установлено недавно
+      // Если да, не вызываем ondisconnect сразу, чтобы дать время для автоматического переподключения
+      if (isProtocolError) {
+        const timeSinceLastConnection = Date.now() - this.lastConnectedTime;
+        const recentlyConnected = timeSinceLastConnection < 5000; // 5 секунд
+        
+        if (recentlyConnected) {
+          this.setDebug(`Protocol error (code 1002) occurred shortly after connection (${Math.round(timeSinceLastConnection / 1000)}s ago), not calling ondisconnect to avoid reconnect loop`);
+          // Сбрасываем флаг wasConnected, чтобы позволить переподключение через onServerError
+          this.wasConnected = false;
+          return;
+        }
+        
+        this.setDebug(`Protocol error (code 1002) occurred ${Math.round(timeSinceLastConnection / 1000)}s after connection, will call ondisconnect`);
+      }
+      
+      // Вызываем ondisconnect только для неожиданного закрытия после успешного подключения
+      this.setError(`Server closed connection unexpectedly. Code: ${closeCode}`);
       if (this.callbacks.ondisconnect) {
         this.callbacks.ondisconnect();
       }
+    } else {
+      this.setDebug("Connection was in 'connecting' state, ignoring close event");
     }
   };
 
