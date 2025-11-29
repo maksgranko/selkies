@@ -747,6 +747,7 @@ async def main():
     app.on_data_message = webrtc_input.on_message
 
     # Send video bitrate messages to app
+    # Client sends video bitrate in kbps, pass directly to set_video_bitrate() which expects kbps
     webrtc_input.on_video_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "video_bitrate", bitrate) and (app.set_video_bitrate(int(bitrate)))
 
     # Send audio bitrate messages to app

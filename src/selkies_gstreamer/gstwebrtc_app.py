@@ -297,7 +297,7 @@ class GSTWebRTCApp:
                 else:
                     nvh264enc = Gst.ElementFactory.make("nvh264enc", "nvenc")
 
-            # The initial bitrate of the encoder in bits per second.
+            # The initial bitrate of the encoder in kilobits per second (kbps).
             # Setting this to 0 will use the bitrate from the NVENC preset.
             # This parameter can be set while the pipeline is running using the
             # set_video_bitrate() method. This helps to match the available
@@ -1226,38 +1226,65 @@ class GSTWebRTCApp:
             self.keyframe_frame_distance = -1 if self.keyframe_distance == -1.0 else max(self.min_keyframe_frame_distance, int(self.framerate * self.keyframe_distance))
             if self.encoder.startswith("nv"):
                 element = Gst.Bin.get_by_name(self.pipeline, "nvenc")
-                element.set_property("gop-size", -1 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
-                element.set_property("vbv-buffer-size", int((self.fec_video_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_nv))
+                if element is None:
+                    logger.warning("encoder element 'nvenc' not found in pipeline")
+                else:
+                    element.set_property("gop-size", -1 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
+                    element.set_property("vbv-buffer-size", int((self.fec_video_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_nv))
             elif self.encoder.startswith("va"):
                 element = Gst.Bin.get_by_name(self.pipeline, "vaenc")
-                element.set_property("key-int-max", 1024 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
-                element.set_property("cpb-size", int((self.fec_video_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_va))
+                if element is None:
+                    logger.warning("encoder element 'vaenc' not found in pipeline")
+                else:
+                    element.set_property("key-int-max", 1024 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
+                    element.set_property("cpb-size", int((self.fec_video_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_va))
             elif self.encoder in ["x264enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "x264enc")
-                element.set_property("key-int-max", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
-                element.set_property("vbv-buf-capacity", int((1000 + self.framerate - 1) // self.framerate * self.vbv_multiplier_sw))
+                if element is None:
+                    logger.warning("encoder element 'x264enc' not found in pipeline")
+                else:
+                    element.set_property("key-int-max", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
+                    element.set_property("vbv-buf-capacity", int((1000 + self.framerate - 1) // self.framerate * self.vbv_multiplier_sw))
             elif self.encoder in ["openh264enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "openh264enc")
-                element.set_property("gop-size", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
+                if element is None:
+                    logger.warning("encoder element 'openh264enc' not found in pipeline")
+                else:
+                    element.set_property("gop-size", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
             elif self.encoder in ["x265enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "x265enc")
-                element.set_property("key-int-max", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
+                if element is None:
+                    logger.warning("encoder element 'x265enc' not found in pipeline")
+                else:
+                    element.set_property("key-int-max", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
             elif self.encoder.startswith("vp"):
                 element = Gst.Bin.get_by_name(self.pipeline, "vpenc")
-                element.set_property("keyframe-max-dist", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
-                vbv_buffer_size = int((1000 + self.framerate - 1) // self.framerate * self.vbv_multiplier_vp)
-                element.set_property("buffer-initial-size", vbv_buffer_size)
-                element.set_property("buffer-optimal-size", vbv_buffer_size)
-                element.set_property("buffer-size", vbv_buffer_size)
+                if element is None:
+                    logger.warning("encoder element 'vpenc' not found in pipeline")
+                else:
+                    element.set_property("keyframe-max-dist", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
+                    vbv_buffer_size = int((1000 + self.framerate - 1) // self.framerate * self.vbv_multiplier_vp)
+                    element.set_property("buffer-initial-size", vbv_buffer_size)
+                    element.set_property("buffer-optimal-size", vbv_buffer_size)
+                    element.set_property("buffer-size", vbv_buffer_size)
             elif self.encoder in ["svtav1enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "svtav1enc")
-                element.set_property("intra-period-length", -1 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
+                if element is None:
+                    logger.warning("encoder element 'svtav1enc' not found in pipeline")
+                else:
+                    element.set_property("intra-period-length", -1 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
             elif self.encoder in ["av1enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "av1enc")
-                element.set_property("keyframe-max-dist", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
+                if element is None:
+                    logger.warning("encoder element 'av1enc' not found in pipeline")
+                else:
+                    element.set_property("keyframe-max-dist", 2147483647 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
             elif self.encoder in ["rav1enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "rav1enc")
-                element.set_property("max-key-frame-interval", 715827882 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
+                if element is None:
+                    logger.warning("encoder element 'rav1enc' not found in pipeline")
+                else:
+                    element.set_property("max-key-frame-interval", 715827882 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
             else:
                 logger.warning("setting keyframe interval (GOP size) not supported with encoder: %s" % self.encoder)
 
@@ -1267,54 +1294,99 @@ class GSTWebRTCApp:
             logger.info("framerate set to: %d" % framerate)
 
     def set_video_bitrate(self, bitrate, cc=False):
-        """Set video encoder target bitrate in bps
+        """Set video encoder target bitrate
 
         Arguments:
-            bitrate {integer} -- bitrate in bits per second, for example, 2000 for 2kbits/s or 10000 for 1mbit/sec.
+            bitrate {integer} -- bitrate in kilobits per second (kbps), for example, 2000 for 2 Mbps or 8000 for 8 Mbps.
             cc {boolean} -- whether the congestion control element triggered the bitrate change.
         """
 
         if self.pipeline:
             # Prevent bitrate from overshooting because of FEC
-            fec_bitrate = int(bitrate / (1.0 + (self.video_packetloss_percent / 100.0)))
+            fec_bitrate_kbps = int(bitrate / (1.0 + (self.video_packetloss_percent / 100.0)))
+            # Convert to bps for encoders that expect bps (some encoders expect kbps, see below)
+            fec_bitrate_bps = fec_bitrate_kbps * 1000
             # Change bitrate range of congestion control element
             if (not cc) and self.congestion_control and self.rtpgccbwe is not None:
                 # Prevent encoder freeze because of low bitrate with min-bitrate
+                # rtpgccbwe expects values in bps
                 self.rtpgccbwe.set_property("min-bitrate", max(100000 + self.fec_audio_bitrate, int(bitrate * 1000 * 0.1 + self.fec_audio_bitrate)))
                 self.rtpgccbwe.set_property("max-bitrate", int(bitrate * 1000 + self.fec_audio_bitrate))
                 self.rtpgccbwe.set_property("estimated-bitrate", int(bitrate * 1000 + self.fec_audio_bitrate))
             # ADD_ENCODER: add new encoder to this list and set vbv-buffer-size if unit is bytes instead of milliseconds
+            # NOTE: Different encoders expect bitrate in different units:
+            #   - kbps (kilobits per second): nv*, va*, x264enc, x265enc, svtav1enc, av1enc
+            #   - bps (bits per second): openh264enc, vp8enc, vp9enc, rav1enc
+            # This matches the initialization code in build_video_pipeline()
             if self.encoder.startswith("nv"):
                 element = Gst.Bin.get_by_name(self.pipeline, "nvenc")
-                if not cc:
-                    element.set_property("vbv-buffer-size", int((fec_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_nv))
-                element.set_property("bitrate", fec_bitrate)
+                if element is None:
+                    logger.warning("encoder element 'nvenc' not found in pipeline")
+                else:
+                    if not cc:
+                        # vbv-buffer-size expects kbits
+                        element.set_property("vbv-buffer-size", int((fec_bitrate_kbps + self.framerate - 1) // self.framerate * self.vbv_multiplier_nv))
+                    # NVENC bitrate property expects kbps (matches initialization at line 306)
+                    element.set_property("bitrate", fec_bitrate_kbps)
             elif self.encoder.startswith("va"):
                 element = Gst.Bin.get_by_name(self.pipeline, "vaenc")
-                if not cc:
-                    element.set_property("cpb-size", int((fec_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_va))
-                element.set_property("bitrate", fec_bitrate)
+                if element is None:
+                    logger.warning("encoder element 'vaenc' not found in pipeline")
+                else:
+                    if not cc:
+                        # cpb-size expects kbits
+                        element.set_property("cpb-size", int((fec_bitrate_kbps + self.framerate - 1) // self.framerate * self.vbv_multiplier_va))
+                    # VAAPI bitrate property expects kbps (matches initialization at line 508)
+                    element.set_property("bitrate", fec_bitrate_kbps)
             elif self.encoder in ["x264enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "x264enc")
-                element.set_property("bitrate", fec_bitrate)
+                if element is None:
+                    logger.warning("encoder element 'x264enc' not found in pipeline")
+                else:
+                    # x264enc bitrate property expects kbps (matches initialization at line 639)
+                    element.set_property("bitrate", fec_bitrate_kbps)
             elif self.encoder in ["openh264enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "openh264enc")
-                element.set_property("bitrate", fec_bitrate * 1000)
+                if element is None:
+                    logger.warning("encoder element 'openh264enc' not found in pipeline")
+                else:
+                    # openh264enc bitrate property expects bps (matches initialization at line 665 where it's multiplied by 1000)
+                    element.set_property("bitrate", fec_bitrate_bps)
             elif self.encoder in ["x265enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "x265enc")
-                element.set_property("bitrate", fec_bitrate)
+                if element is None:
+                    logger.warning("encoder element 'x265enc' not found in pipeline")
+                else:
+                    # x265enc bitrate property expects kbps (matches initialization at line 683)
+                    element.set_property("bitrate", fec_bitrate_kbps)
             elif self.encoder in ["vp8enc", "vp9enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "vpenc")
-                element.set_property("target-bitrate", fec_bitrate * 1000)
+                if element is None:
+                    logger.warning("encoder element 'vpenc' not found in pipeline")
+                else:
+                    # VP8/VP9 target-bitrate property expects bps (matches initialization at line 722 where it's multiplied by 1000)
+                    element.set_property("target-bitrate", fec_bitrate_bps)
             elif self.encoder in ["svtav1enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "svtav1enc")
-                element.set_property("target-bitrate", fec_bitrate)
+                if element is None:
+                    logger.warning("encoder element 'svtav1enc' not found in pipeline")
+                else:
+                    # svtav1enc target-bitrate property expects kbps (matches initialization at line 739)
+                    element.set_property("target-bitrate", fec_bitrate_kbps)
             elif self.encoder in ["av1enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "av1enc")
-                element.set_property("target-bitrate", fec_bitrate)
+                if element is None:
+                    logger.warning("encoder element 'av1enc' not found in pipeline")
+                else:
+                    # av1enc target-bitrate property expects kbps (matches initialization at line 764)
+                    element.set_property("target-bitrate", fec_bitrate_kbps)
             elif self.encoder in ["rav1enc"]:
                 element = Gst.Bin.get_by_name(self.pipeline, "rav1enc")
-                element.set_property("bitrate", fec_bitrate * 1000)
+                if element is None:
+                    logger.warning("encoder element 'rav1enc' not found in pipeline")
+                else:
+                    # rav1enc bitrate property expects bps (matches initialization at line 783 where it's multiplied by 1000)
+                    element.set_property("bitrate", fec_bitrate_bps)
             else:
                 logger.warning("set_video_bitrate not supported with encoder: %s" % self.encoder)
 
@@ -1324,7 +1396,7 @@ class GSTWebRTCApp:
                 logger.debug("video bitrate set with congestion control to: %d" % bitrate)
 
             self.video_bitrate = bitrate
-            self.fec_video_bitrate = fec_bitrate
+            self.fec_video_bitrate = fec_bitrate_kbps
 
             if not cc:
                 self.__send_data_channel_message(
@@ -1347,9 +1419,11 @@ class GSTWebRTCApp:
                 self.rtpgccbwe.set_property("max-bitrate", int(self.video_bitrate * 1000 + fec_bitrate))
                 self.rtpgccbwe.set_property("estimated-bitrate", int(self.video_bitrate * 1000 + fec_bitrate))
             element = Gst.Bin.get_by_name(self.pipeline, "opusenc")
-            element.set_property("bitrate", bitrate)
-
-            logger.info("audio bitrate set to: %d" % bitrate)
+            if element is None:
+                logger.warning("encoder element 'opusenc' not found in pipeline")
+            else:
+                element.set_property("bitrate", bitrate)
+                logger.info("audio bitrate set to: %d" % bitrate)
             self.audio_bitrate = bitrate
             self.fec_audio_bitrate = fec_bitrate
 

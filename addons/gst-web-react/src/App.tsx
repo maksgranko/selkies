@@ -94,7 +94,14 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   const metricsIntervalRef = useRef<number | null>(null);
   const initializedRef = useRef<boolean>(false);
 
-  const [videoBitRate, setVideoBitRate] = useState(getIntParam("videoBitRate", 8000) ?? 8000);
+  // Конвертируем старое значение из bps в kbps, если оно больше 1000000 (1 Mbps в bps = 1000 kbps)
+  const initialVideoBitRate = (() => {
+    const value = getIntParam("videoBitRate", 8000);
+    if (value === null) return 8000;
+    // Если значение больше 1000, значит это новый формат (bps), конвертируем обратно в kbps
+    return value >= 1000000 ? value / 1000 : value;
+  })();
+  const [videoBitRate, setVideoBitRate] = useState(initialVideoBitRate);
   const [videoFramerate, setVideoFramerate] = useState(getIntParam("videoFramerate", 60) ?? 60);
   const [audioBitRate, setAudioBitRate] = useState(getIntParam("audioBitRate", 128000) ?? 128000);
   const [showStart, setShowStart] = useState(false);
@@ -514,9 +521,13 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
         } else if (action.startsWith('video_bitrate')) {
           const videoBitrateSetting = getIntParam("videoBitRate", null);
           if (videoBitrateSetting !== null) {
-            setVideoBitRate(videoBitrateSetting);
+            // Конвертируем старое значение из bps в kbps, если оно больше 1000000
+            const value = videoBitrateSetting >= 1000000 ? videoBitrateSetting / 1000 : videoBitrateSetting;
+            setVideoBitRate(value);
           } else {
-            setVideoBitRate(parseInt(action.split(",")[1]));
+            // Сервер отправляет значение в kbps, используем как есть
+            const serverValue = parseInt(action.split(",")[1]);
+            setVideoBitRate(serverValue);
           }
         } else if (action.startsWith('audio_bitrate')) {
           const audioBitrateSetting = getIntParam("audioBitRate", null);
