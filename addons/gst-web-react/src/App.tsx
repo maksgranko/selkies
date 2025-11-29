@@ -97,6 +97,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   const [videoFramerate, setVideoFramerate] = useState(getIntParam("videoFramerate", 60) ?? 60);
   const [audioBitRate, setAudioBitRate] = useState(getIntParam("audioBitRate", 128000) ?? 128000);
   const [showStart, setShowStart] = useState(false);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [logEntries, setLogEntries] = useState<string[]>([]);
   const [debugEntries, setDebugEntries] = useState<string[]>([]);
@@ -135,6 +136,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   const videoConnectedRef = useRef<string>('');
   const audioConnectedRef = useRef<string>('');
   const statWatchEnabledRef = useRef<boolean>(false);
+  const connectionStatusRef = useRef<'connecting' | 'connected' | 'failed' | 'checkconnect'>('connecting');
 
   // Функция для добавления временной метки к логам
   const applyTimestamp = useCallback((msg: string): string => {
@@ -145,7 +147,15 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
 
   // Инициализация WebRTC
   useEffect(() => {
+    // Защита от двойной инициализации в StrictMode
+    if (initializedRef.current) {
+      console.log('[App] Skipping double initialization in StrictMode');
+      return;
+    }
     if (!videoElementRef.current || !audioElementRef.current) return;
+    
+    // Помечаем как инициализированное сразу, чтобы предотвратить повторную инициализацию
+    initializedRef.current = true;
 
     // Функция для включения отслеживания статистики
     const enableStatWatch = () => {
@@ -280,12 +290,14 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
         setLogEntries(prev => [...prev, applyTimestamp(`[signalling] [ERROR] ${message}`)]);
       },
       ondisconnect: () => {
-        const checkconnect = status === 'checkconnect';
+        const checkconnect = connectionStatusRef.current === 'checkconnect';
         console.log("signalling disconnected");
         setStatus('connecting');
+        connectionStatusRef.current = 'connecting';
         videoElement.style.cursor = "auto";
         webrtc.reset();
         setStatus('checkconnect');
+        connectionStatusRef.current = 'checkconnect';
         if (!checkconnect) audioSignalling.disconnect();
       }
     });
@@ -299,12 +311,14 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
         setLogEntries(prev => [...prev, applyTimestamp(`[audio signalling] [ERROR] ${message}`)]);
       },
       ondisconnect: () => {
-        const checkconnect = status === 'checkconnect';
+        const checkconnect = connectionStatusRef.current === 'checkconnect';
         console.log("audio signalling disconnected");
         setStatus('connecting');
+        connectionStatusRef.current = 'connecting';
         videoElement.style.cursor = "auto";
         audioWebrtc.reset();
         setStatus('checkconnect');
+        connectionStatusRef.current = 'checkconnect';
         if (!checkconnect) signalling.disconnect();
       }
     });
@@ -332,12 +346,21 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
           });
         }
         if (videoConnectedRef.current === "connected" && audioConnectedRef.current === "connected") {
-          setStatus(state as any);
+          const newStatus = state as any;
+          setStatus(newStatus);
+          connectionStatusRef.current = newStatus;
           if (!statWatchEnabledRef.current) {
             enableStatWatch();
           }
+          // Проверяем, не играет ли уже видео (на случай если событие play не сработало)
+          if (videoElementRef.current && !videoElementRef.current.paused && videoElementRef.current.readyState >= 2) {
+            setIsVideoPlaying(true);
+            setShowStart(false);
+          }
         } else {
-          setStatus((state === "connected" ? audioConnectedRef.current : videoConnectedRef.current) as any);
+          const newStatus = (state === "connected" ? audioConnectedRef.current : videoConnectedRef.current) as any;
+          setStatus(newStatus);
+          connectionStatusRef.current = newStatus;
         }
       },
       ondatachannelopen: () => {
@@ -558,12 +581,21 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
           });
         }
         if (audioConnectedRef.current === "connected" && videoConnectedRef.current === "connected") {
-          setStatus(state as any);
+          const newStatus = state as any;
+          setStatus(newStatus);
+          connectionStatusRef.current = newStatus;
           if (!statWatchEnabledRef.current) {
             enableStatWatch();
           }
+          // Проверяем, не играет ли уже видео (на случай если событие play не сработало)
+          if (videoElementRef.current && !videoElementRef.current.paused && videoElementRef.current.readyState >= 2) {
+            setIsVideoPlaying(true);
+            setShowStart(false);
+          }
         } else {
-          setStatus((state === "connected" ? videoConnectedRef.current : audioConnectedRef.current) as any);
+          const newStatus = (state === "connected" ? videoConnectedRef.current : audioConnectedRef.current) as any;
+          setStatus(newStatus);
+          connectionStatusRef.current = newStatus;
         }
       },
       onplaystreamrequired: () => {
@@ -650,12 +682,48 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
       }
     };
 
+    // Обработка события play для video элемента - скрываем спиннер когда видео начинает играть
+    const handleVideoPlay = () => {
+      setIsVideoPlaying(true);
+      setShowStart(false); // Сбрасываем showStart когда видео начинает играть автоматически
+    };
+
+    // Обработка события pause для video элемента
+    const handleVideoPause = () => {
+      setIsVideoPlaying(false);
+    };
+
+    // Обработка события ended для video элемента
+    const handleVideoEnded = () => {
+      setIsVideoPlaying(false);
+    };
+
     videoElement.addEventListener('loadeddata', handleLoadedData);
+    videoElement.addEventListener('play', handleVideoPlay);
+    videoElement.addEventListener('pause', handleVideoPause);
+    videoElement.addEventListener('ended', handleVideoEnded);
 
     return () => {
+      // В StrictMode cleanup вызывается дважды - нужно проверять состояние перед закрытием
+      const isConnected = connectionStatusRef.current === 'connected' || connectionStatusRef.current === 'checkconnect';
+      const hasActivePeerConnection = webrtcRef.current?.peerConnection && 
+        (webrtcRef.current.peerConnection.connectionState === 'connected' || 
+         webrtcRef.current.peerConnection.connectionState === 'connecting');
+      
+      // Не закрываем соединения, если они активны (в реальном размонтировании компонента закроются автоматически)
+      if (isConnected || hasActivePeerConnection) {
+        console.log('[App] Skipping cleanup - connection is active (this is likely StrictMode double cleanup)');
+        // Сбрасываем флаг инициализации только если соединение действительно закрыто
+        // Это позволит переинициализации в случае реального размонтирования
+        return;
+      }
+      
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
       videoElement.removeEventListener('loadeddata', handleLoadedData);
+      videoElement.removeEventListener('play', handleVideoPlay);
+      videoElement.removeEventListener('pause', handleVideoPause);
+      videoElement.removeEventListener('ended', handleVideoEnded);
       if (statWatchIntervalRef.current) {
         clearInterval(statWatchIntervalRef.current);
         statWatchIntervalRef.current = null;
@@ -667,8 +735,17 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
       if (webrtcRef.current?.input) {
         webrtcRef.current.input.detach();
       }
-      signalling.disconnect();
-      audioSignalling.disconnect();
+      
+      // Закрываем соединения только если они не активны
+      if (signalling && signalling.state !== 'connected') {
+        signalling.disconnect();
+      }
+      if (audioSignalling && audioSignalling.state !== 'connected') {
+        audioSignalling.disconnect();
+      }
+      
+      // Сбрасываем флаг инициализации только при реальном cleanup
+      initializedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Запускается только один раз при монтировании
@@ -709,6 +786,7 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
       audioWebrtcRef.current.playStream();
     }
     setShowStart(false);
+    setIsVideoPlaying(true);
   };
 
   const handleEnableClipboard = () => {
@@ -789,64 +867,84 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
   useEffect(() => {
     if (!initializedRef.current) return;
     setBoolParam("turnSwitch", turnSwitch);
-    // Не перезагружаем, если соединение активно или находится в процессе установки
-    if (webrtcRef.current && webrtcRef.current.peerConnection !== null) {
-      // Проверяем состояние соединения перед перезагрузкой
-      const currentStatus = status;
-      // Никогда не перезагружаем, если соединение активно или устанавливается
-      if (currentStatus === 'checkconnect' || currentStatus === 'connected') {
-        console.log(`[App] Skipping reload for turnSwitch change - connection is ${currentStatus}`);
-        return;
-      }
-      // Перезагружаем только если соединение действительно неактивно (failed или disconnected)
+    
+    // Никогда не перезагружаем, если соединение активно или находится в процессе установки
+    const currentStatus = connectionStatusRef.current;
+    const peerConnectionState = webrtcRef.current?.peerConnection?.connectionState;
+    
+    // Проверяем состояние соединения через ref (актуальное значение)
+    if (currentStatus === 'checkconnect' || currentStatus === 'connected' || 
+        peerConnectionState === 'connected' || peerConnectionState === 'connecting') {
+      console.log(`[App] Skipping reload for turnSwitch change - connection is ${currentStatus} (peerConnection: ${peerConnectionState})`);
+      return;
+    }
+    
+    // Если нет peerConnection, можно безопасно перезагрузить
+    if (!webrtcRef.current || !webrtcRef.current.peerConnection) {
+      console.log(`[App] Reloading page due to turnSwitch change - no active connection`);
       setTimeout(() => {
-        // Проверяем еще раз перед перезагрузкой - если соединение стало активным, отменяем
-        if (status === 'checkconnect' || status === 'connected') {
-          console.log(`[App] Cancelling reload for turnSwitch - connection state changed to ${status}`);
-          return;
-        }
-        // Проверяем, что соединение действительно закрыто
-        if (webrtcRef.current?.peerConnection?.connectionState === 'connected' || 
-            webrtcRef.current?.peerConnection?.connectionState === 'connecting') {
-          console.log(`[App] Cancelling reload for turnSwitch - peerConnection is ${webrtcRef.current.peerConnection.connectionState}`);
-          return;
-        }
-        console.log(`[App] Reloading page due to turnSwitch change`);
         document.location.reload();
       }, 700);
+      return;
     }
-  }, [turnSwitch, status]);
+    
+    // Перезагружаем только если соединение действительно неактивно
+    setTimeout(() => {
+      // Проверяем еще раз перед перезагрузкой через ref (актуальное значение)
+      const statusBeforeReload = connectionStatusRef.current;
+      const peerStateBeforeReload = webrtcRef.current?.peerConnection?.connectionState;
+      
+      if (statusBeforeReload === 'checkconnect' || statusBeforeReload === 'connected' || 
+          peerStateBeforeReload === 'connected' || peerStateBeforeReload === 'connecting') {
+        console.log(`[App] Cancelling reload for turnSwitch - connection became active (status: ${statusBeforeReload}, peerConnection: ${peerStateBeforeReload})`);
+        return;
+      }
+      
+      console.log(`[App] Reloading page due to turnSwitch change`);
+      document.location.reload();
+    }, 700);
+  }, [turnSwitch]);
 
   useEffect(() => {
     if (!initializedRef.current) return;
     setBoolParam("debug", debug);
-    // Не перезагружаем, если соединение активно или находится в процессе установки
-    if (webrtcRef.current && webrtcRef.current.peerConnection !== null) {
-      // Проверяем состояние соединения перед перезагрузкой
-      const currentStatus = status;
-      // Никогда не перезагружаем, если соединение активно или устанавливается
-      if (currentStatus === 'connecting' || currentStatus === 'checkconnect' || currentStatus === 'connected') {
-        console.log(`[App] Skipping reload for debug change - connection is ${currentStatus}`);
-        return;
-      }
-      // Перезагружаем только если соединение действительно неактивно (failed или disconnected)
+    
+    // Никогда не перезагружаем, если соединение активно или находится в процессе установки
+    const currentStatus = connectionStatusRef.current;
+    const peerConnectionState = webrtcRef.current?.peerConnection?.connectionState;
+    
+    // Проверяем состояние соединения через ref (актуальное значение)
+    if (currentStatus === 'connecting' || currentStatus === 'checkconnect' || currentStatus === 'connected' || 
+        peerConnectionState === 'connected' || peerConnectionState === 'connecting') {
+      console.log(`[App] Skipping reload for debug change - connection is ${currentStatus} (peerConnection: ${peerConnectionState})`);
+      return;
+    }
+    
+    // Если нет peerConnection, можно безопасно перезагрузить
+    if (!webrtcRef.current || !webrtcRef.current.peerConnection) {
+      console.log(`[App] Reloading page due to debug change - no active connection`);
       setTimeout(() => {
-        // Проверяем еще раз перед перезагрузкой - если соединение стало активным, отменяем
-        if (status === 'connecting' || status === 'checkconnect' || status === 'connected') {
-          console.log(`[App] Cancelling reload for debug - connection state changed to ${status}`);
-          return;
-        }
-        // Проверяем, что соединение действительно закрыто
-        if (webrtcRef.current?.peerConnection?.connectionState === 'connected' || 
-            webrtcRef.current?.peerConnection?.connectionState === 'connecting') {
-          console.log(`[App] Cancelling reload for debug - peerConnection is ${webrtcRef.current.peerConnection.connectionState}`);
-          return;
-        }
-        console.log(`[App] Reloading page due to debug change`);
         document.location.reload();
       }, 700);
+      return;
     }
-  }, [debug, status]);
+    
+    // Перезагружаем только если соединение действительно неактивно
+    setTimeout(() => {
+      // Проверяем еще раз перед перезагрузкой через ref (актуальное значение)
+      const statusBeforeReload = connectionStatusRef.current;
+      const peerStateBeforeReload = webrtcRef.current?.peerConnection?.connectionState;
+      
+      if (statusBeforeReload === 'connecting' || statusBeforeReload === 'checkconnect' || statusBeforeReload === 'connected' || 
+          peerStateBeforeReload === 'connected' || peerStateBeforeReload === 'connecting') {
+        console.log(`[App] Cancelling reload for debug - connection became active (status: ${statusBeforeReload}, peerConnection: ${peerStateBeforeReload})`);
+        return;
+      }
+      
+      console.log(`[App] Reloading page due to debug change`);
+      document.location.reload();
+    }, 700);
+  }, [debug]);
 
   useEffect(() => {
     if (showDrawer && webrtcRef.current?.input) {
@@ -861,10 +959,6 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
     document.title = `Selkies - ${config.appName || 'webrtc'}`;
   }, [config.appName]);
 
-  // Помечаем что инициализация завершена после первого рендера
-  useEffect(() => {
-    initializedRef.current = true;
-  }, []);
 
   const videoBitRateOptions = [
     { text: '250 kbps', value: 250 },
@@ -1078,15 +1172,18 @@ const App: React.FC<AppProps> = ({ connectionConfig, appConfig }) => {
           </div>
         ) : (
           <div>
-            {status !== 'connected' && (
+            {/* Показываем спиннер только если видео не играет И (соединение не установлено ИЛИ требуется запуск) */}
+            {!isVideoPlaying && (status !== 'connected' || showStart) && (
               <>
                 <div className="spinner"></div>
                 <div className="loading-text">{loadingText || 'Connecting...'}</div>
               </>
             )}
-            {status === 'connected' && showStart && (
+            {/* Показываем кнопку Start когда соединение установлено, но стрим ещё не запущен */}
+            {status === 'connected' && showStart && !isVideoPlaying && (
               <button onClick={handlePlayStream}>Start</button>
             )}
+            {/* Спиннер автоматически скрывается когда видео играет (isVideoPlaying === true) */}
           </div>
         )}
       </div>

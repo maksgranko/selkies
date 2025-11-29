@@ -253,7 +253,20 @@ export class WebRTCDemoSignalling {
    */
   disconnect(): void {
     if (this.ws_conn) {
-      this.ws_conn.close();
+      // Проверяем состояние WebSocket перед закрытием
+      // Закрываем только если соединение открыто или в процессе открытия
+      if (this.ws_conn.readyState === WebSocket.OPEN || this.ws_conn.readyState === WebSocket.CONNECTING) {
+        this.setDebug(`Closing WebSocket connection (state: ${this.state}, readyState: ${this.ws_conn.readyState})`);
+        try {
+          this.ws_conn.close(1000, 'Client disconnect'); // Normal closure
+        } catch (e) {
+          this.setDebug(`Error closing WebSocket: ${e}`);
+        }
+      } else {
+        this.setDebug(`Skipping disconnect - WebSocket already closed (readyState: ${this.ws_conn.readyState})`);
+      }
+      this.ws_conn = null;
+      this.state = 'disconnected';
     }
   }
 
